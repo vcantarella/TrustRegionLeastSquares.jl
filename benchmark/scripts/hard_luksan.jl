@@ -1,4 +1,4 @@
-include("nlls_problems_prep.jl")
+include(joinpath(@__DIR__, "..", "harness.jl"))
 using PRIMA
 using NonlinearSolve
 using Revise
@@ -187,7 +187,7 @@ end
 
 df = DataFrame(results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_proc = compare_with_best(df)
 summary_df = evaluate_solvers(df_proc)
@@ -233,7 +233,7 @@ end
 
 df = DataFrame(results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_proc = compare_with_best(df)
 summary_df = evaluate_solvers(df_proc)

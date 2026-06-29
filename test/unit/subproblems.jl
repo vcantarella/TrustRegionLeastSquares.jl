@@ -3,7 +3,6 @@ using LinearAlgebra
 using Statistics
 using Random
 using ForwardDiff
-using Revise
 using nonlinearlstr
 
 @testset "Unconstrained Subproblem Tests" begin
@@ -64,7 +63,7 @@ using nonlinearlstr
             cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
 
             @test cache.scaling_matrix == I(n)
-            @test typeof(cache.factorization) <:LinearAlgebra.Eigen
+            @test typeof(cache.factorization) <: LinearAlgebra.Eigen
         end
     end
 

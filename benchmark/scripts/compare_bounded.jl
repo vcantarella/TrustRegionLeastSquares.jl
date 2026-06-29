@@ -1,5 +1,5 @@
-include("nlls_problems_prep.jl")
-include("custom_bounded_problems.jl")
+include(joinpath(@__DIR__, "..", "harness.jl"))
+include(joinpath(@__DIR__, "..", "problems", "custom_bounded.jl"))
 using NLPModels
 using ADNLPModels
 using JSOSolvers
@@ -35,7 +35,7 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 450)
 # 4. Analyze results
 df_nls = DataFrame(nls_results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_nls_proc = compare_with_best(df_nls)
 summary_nls = evaluate_solvers(df_nls_proc)

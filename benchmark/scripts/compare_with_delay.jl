@@ -1,4 +1,4 @@
-include("nlls_problems_prep.jl")
+include(joinpath(@__DIR__, "..", "harness.jl"))
 using NLPModels
 using JSOSolvers
 using PRIMA
@@ -28,7 +28,7 @@ solvers = [
     ("Scipy-LeastSquares", nothing),
 
     #LsqFit: lets see how it goes
-    ("LsqFit-LM", nothing)
+    ("LsqFit-LM", nothing),
 ]
 
 # We need a custom benchmark loop to inject the delay into the jacobian functions
@@ -38,7 +38,7 @@ function nlls_benchmark_with_delay(problems, solvers; max_iter = 100)
     for (i, prob_name) in enumerate(problems)
         println("\n" * "="^60)
         println("Problem $i/$max_problems: $prob_name")
-        
+
         # Create problem instance
         local nlp
         local prob_data
@@ -52,39 +52,44 @@ function nlls_benchmark_with_delay(problems, solvers; max_iter = 100)
 
         # Inject 1-second delay into Jacobian functions
         orig_jac = prob_data.jacobian_func
-        prob_data = merge(prob_data, (
-            jacobian_func = x -> (sleep(1.0); orig_jac(x)),
-        ))
-        
+        prob_data = merge(prob_data, (jacobian_func = x -> (sleep(1.0); orig_jac(x)),))
+
         if hasproperty(prob_data, :jacobian_func!)
             orig_jac! = prob_data.jacobian_func!
-            prob_data = merge(prob_data, (
-                jacobian_func! = (J, x) -> (sleep(1.0); orig_jac!(J, x)),
-            ))
+            prob_data = merge(
+                prob_data,
+                (jacobian_func! = (J, x) -> (sleep(1.0); orig_jac!(J, x)),),
+            )
         end
 
         println("  Variables: $(prob_data.n)")
         println("  Residuals: $(prob_data.m)")
         initial_obj = prob_data.obj_func(prob_data.x0)
-        
+
         # Test each solver
         problem_results = []
         for (solver_name, solver_func) in solvers
             print("    Testing $solver_name... ")
-            result = test_solver_on_problem(solver_name, solver_func, prob_data, nlp, max_iter)
+            result =
+                test_solver_on_problem(solver_name, solver_func, prob_data, nlp, max_iter)
             if result.success && result.converged
-                println("✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)")
+                println(
+                    "✓ obj=$(round(result.final_cost, digits=8)), iters=$(result.iterations)",
+                )
             else
                 status = result.success ? "no convergence" : "failed"
                 println("✗ $status")
             end
-            result_with_problem = merge(result, (
-                problem = String(prob_name),
-                nvars = prob_data.n,
-                nresiduals = prob_data.m,
-                initial_objective = initial_obj,
-                improvement = initial_obj - result.final_cost,
-            ))
+            result_with_problem = merge(
+                result,
+                (
+                    problem = String(prob_name),
+                    nvars = prob_data.n,
+                    nresiduals = prob_data.m,
+                    initial_objective = initial_obj,
+                    improvement = initial_obj - result.final_cost,
+                ),
+            )
             push!(problem_results, result_with_problem)
         end
         append!(results, problem_results)
@@ -99,7 +104,7 @@ nls_results = nlls_benchmark_with_delay(nls_problems, solvers, max_iter = 400)
 # Convert to DataFrame
 df_nls = DataFrame(nls_results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_nls_proc = compare_with_best(df_nls)
 summary_nls = evaluate_solvers(df_nls_proc)

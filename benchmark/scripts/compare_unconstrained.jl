@@ -1,4 +1,10 @@
-include("nlls_problems_prep.jl")
+# Cross-package comparison on unconstrained NLSProblems.jl problems.
+# Run with the benchmark environment:
+#   julia --project=benchmark benchmark/scripts/compare_unconstrained.jl
+# Knobs (env vars):
+#   MAX_VARS      - only include problems with at most this many variables (default 999)
+#   PROBLEM_LIMIT - cap the number of problems for a quick run (default: no cap)
+include(joinpath(@__DIR__, "..", "harness.jl"))
 using NLPModels
 using JSOSolvers
 using PRIMA
@@ -7,7 +13,11 @@ using Revise
 using DataFrames
 using nonlinearlstr
 using LsqFit
-nls_problems = find_nlls_problems(999)
+const MAX_VARS = parse(Int, get(ENV, "MAX_VARS", "999"))
+const PROBLEM_LIMIT = parse(Int, get(ENV, "PROBLEM_LIMIT", "0"))  # 0 = no cap
+let probs = find_nlls_problems(MAX_VARS)
+    global nls_problems = PROBLEM_LIMIT > 0 ? probs[1:min(PROBLEM_LIMIT, end)] : probs
+end
 
 solvers = [
     # nonlinearlstr solvers (keep all)
@@ -37,7 +47,7 @@ solvers = [
     ("NLLSsolver-levenbergmarquardt", NLLSsolver.levenbergmarquardt),
 
     #LsqFit: lets see how it goes
-    ("LsqFit-LM", nothing)
+    ("LsqFit-LM", nothing),
 ]
 
 # Run benchmark
@@ -46,7 +56,7 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 # Convert to DataFrame
 df_nls = DataFrame(nls_results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_nls_proc = compare_with_best(df_nls)
 summary_nls = evaluate_solvers(df_nls_proc)

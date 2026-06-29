@@ -1,4 +1,4 @@
-include("nlls_problems_prep.jl")
+include(joinpath(@__DIR__, "..", "harness.jl"))
 using DataFrames
 using nonlinearlstr
 using Test
@@ -25,11 +25,26 @@ res! = prob.residual_func!
 jac! = prob.jacobian_func!
 x0 = prob.x0
 nonlinearlstr.lm_trust_region!(res!, jac!, x0, prob.n, nonlinearlstr.QRSolve())
-nonlinearlstr.lm_trust_region_v2!(res!, jac!, x0, prob.n,
- nonlinearlstr.QRCholStrategy(), nonlinearlstr.NoScaling();
- max_iter = 400, gtol = 1e-6)
+nonlinearlstr.lm_trust_region_v2!(
+    res!,
+    jac!,
+    x0,
+    prob.n,
+    nonlinearlstr.QRCholStrategy(),
+    nonlinearlstr.NoScaling();
+    max_iter = 400,
+    gtol = 1e-6,
+)
 
-println(@be nonlinearlstr.lm_trust_region!($res!, $jac!, $x0, $prob.n, $nonlinearlstr.QRSolve()))
+println(
+    @be nonlinearlstr.lm_trust_region!(
+        $res!,
+        $jac!,
+        $x0,
+        $prob.n,
+        $nonlinearlstr.QRSolve(),
+    )
+)
 println(@be nonlinearlstr.lm_trust_region_v2!($res!, $jac!, $x0, $prob.n))
 
 
@@ -38,7 +53,7 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 # 4. Analyze results
 df_nls = DataFrame(nls_results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_nls_proc = compare_with_best(df_nls)
 summary_nls = evaluate_solvers(df_nls_proc)

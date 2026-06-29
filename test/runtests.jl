@@ -1,15 +1,14 @@
 using nonlinearlstr
 using Test
-using PythonCall
-using CondaPkg
-# CondaPkg.add("numpy")
-# CondaPkg.add("scipy")
 
+# Unit / correctness suite only. This is intentionally lightweight and portable
+# (pure Julia + LinearAlgebra), so it runs on every OS in CI. The cross-package
+# benchmarks live under ../benchmark with their own (heavy) environment and are
+# run manually, not as part of `Pkg.test()`.
 @testset "nonlinearlstr.jl" begin
-    include("jet_tests.jl")
-
-    include("test_subproblems.jl")
-    include("test_colemanli.jl")
-    include("problem_testing_simp.jl")
-    include("bounded_tests.jl")
+    include("unit/jet.jl")
+    include("unit/subproblems.jl")
+    include("unit/colemanli.jl")
+    include("unit/bounded.jl")
+    include("unit/allocations.jl")
 end

@@ -21,7 +21,7 @@ Q*diagm(Λ)*Q'
 
 
 C = copy(B)
-C[1,1] = 0.0
+C[1, 1] = 0.0
 
 FC = eigen(Symmetric(C))
 Q = FC.vectors

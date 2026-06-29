@@ -1,4 +1,4 @@
-include("nlls_problems_prep.jl")
+include(joinpath(@__DIR__, "..", "harness.jl"))
 using NLPModels
 using JSOSolvers
 using PRIMA
@@ -46,7 +46,7 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 # Convert to DataFrame
 df_nls = DataFrame(nls_results)
 
-include("evaluate_solver_dfs.jl")
+include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 df_nls_proc = compare_with_best(df_nls)
 summary_nls = evaluate_solvers(df_nls_proc)

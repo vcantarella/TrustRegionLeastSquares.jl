@@ -1,0 +1,112 @@
+function create_cutest_functions(nlp)
+    """Create Julia function wrappers for CUTEst NLLS problem"""
+    # Get problem info
+    #n = nlp.meta.nvar
+    #m = nlp.meta.ncon  # Number of residuals (constraints in NLLS formulation)
+    x0 = copy(nlp.meta.x0)
+    bl = copy(nlp.meta.lvar)
+    bu = copy(nlp.meta.uvar)
+    # For CUTEst NLLS problems with objtype="none", the residuals are the constraints
+    residual_func(x) = NLPModels.cons(nlp, x)
+    jacobian_func(x) = Matrix(NLPModels.jac(nlp, x))
+    n, m = size(jacobian_func(x0))
+    # Create objective as 0.5 * ||r||²
+    obj_func(x) = 0.5 * dot(residual_func(x), residual_func(x))
+    grad_func(x) = jacobian_func(x)' * residual_func(x)
+
+    # Use Gauss-Newton approximation for Hessian
+    hess_func(x) = begin
+        J = jacobian_func(x)
+        return J' * J
+    end
+
+    return (
+        n = n,
+        m = m,
+        x0 = x0,
+        bl = bl,
+        bu = bu,
+        initial_cost = obj_func(x0),
+        residual_func = residual_func,
+        jacobian_func = jacobian_func,
+        obj_func = obj_func,
+        grad_func = grad_func,
+        hess_func = hess_func,
+        problem = nlp.meta.name,
+    )
+end
+
+
+function create_nls_functions(prob)
+    """
+    Create Julia function wrappers for NLSProblems with in-place support.
+
+    Benchmark-fairness note: the in-place `residual_func!`/`jacobian_func!` returned here
+    evaluate via NLPModels' native in-place coordinate API with buffers preallocated once,
+    so every solver that consumes these closures pays the same per-evaluation cost. This
+    matches how JSO-TRON evaluates the model (it consumes the NLSModel directly). One
+    residual asymmetry remains and is intentional/unavoidable: TRON is handed the raw
+    NLSModel while the others receive these extracted closures, so a thin call-indirection
+    difference still exists between TRON and the rest. Interpret small TRON-vs-rest timing
+    gaps with that in mind.
+    """
+    x0 = copy(prob.meta.x0)
+    bl = copy(prob.meta.lvar)
+    bu = copy(prob.meta.uvar)
+
+    # Initial probe to get exact sizes
+    r0 = residual(prob, x0)
+    n = length(r0)
+    m = length(x0)
+
+    # 1. Out-of-place functions (Required for SciPy, PRIMA)
+    residual_func(x) = residual(prob, x)
+    jacobian_func(x) = Matrix(jac_residual(prob, x))
+
+    # 2. In-place functions (Crucial for LeastSquaresOptim, SciML)
+    residual_func!(r, x) = residual!(prob, x, r)
+
+    # Truly in-place dense Jacobian fill. We compute the sparsity structure ONCE here,
+    # then on each call fill the nonzeros via jac_coord_residual! (no allocation) and
+    # scatter them into the caller's preallocated dense J. The previous version did
+    # `J .= Matrix(jac_residual(prob, x))`, allocating a fresh dense matrix on EVERY
+    # evaluation — a cost paid by every solver except JSO-TRON, which consumes the
+    # NLSModel directly and uses NLPModels' native in-place operators. Equalizing this
+    # path makes the benchmark compare algorithms rather than wrapper overhead.
+    jac_rows, jac_cols = jac_structure_residual(prob)
+    jac_vals = zeros(eltype(x0), length(jac_rows))
+    function jacobian_func!(J, x)
+        jac_coord_residual!(prob, x, jac_vals)
+        fill!(J, 0)
+        @inbounds for k in eachindex(jac_rows)
+            J[jac_rows[k], jac_cols[k]] = jac_vals[k]
+        end
+        return J
+    end
+
+    obj_func(x) = obj(prob, x)
+    grad_func(x) = grad(prob, x)
+
+    hess_func(x) = begin
+        J = jacobian_func(x)
+        return J' * J
+    end
+
+    return (
+        n = n,
+        m = m,
+        x0 = x0,
+        bl = bl,
+        bu = bu,
+        initial_cost = obj_func(x0),
+        # Return both versions!
+        residual_func = residual_func,
+        jacobian_func = jacobian_func,
+        residual_func! = residual_func!,
+        jacobian_func! = jacobian_func!,
+        obj_func = obj_func,
+        grad_func = grad_func,
+        hess_func = hess_func,
+        problem = prob.meta.name,
+    )
+end
