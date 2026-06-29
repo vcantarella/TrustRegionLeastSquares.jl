@@ -84,5 +84,6 @@ end
 
 # 7. Plots
 fig_nls = build_performance_plots(df_nls_proc)
-save("../test_plots/bounded_solver_performance.png", fig_nls)
-println("\nPerformance plot saved to '../test_plots/bounded_solver_performance.png'")
+bounded_plot_path = joinpath(plots_dir(), "bounded_solver_performance.png")
+save(bounded_plot_path, fig_nls)
+println("\nPerformance plot saved to '$bounded_plot_path'")

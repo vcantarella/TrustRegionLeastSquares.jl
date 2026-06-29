@@ -196,7 +196,7 @@ using Test
 @test summary_df[summary_df[!, :solver] .== "LM-QR", :percentage_success][1] > 0.49
 @test summary_df[summary_df[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.49
 fig = build_performance_plots(df_proc)
-save("../test_plots/hardluksan_nls_solver_performance.png", fig)
+save(joinpath(plots_dir(), "hardluksan_nls_solver_performance.png"), fig)
 
 # Repeat for log-scale variant
 problems_log = [
@@ -241,4 +241,4 @@ display(summary_df)
 @test summary_df[summary_df[!, :solver] .== "LM-QR", :percentage_success][1] > 0.49
 @test summary_df[summary_df[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.49
 fig = build_performance_plots(df_proc)
-save("../test_plots/hardluksan_nls_solver_performance_log.png", fig)
+save(joinpath(plots_dir(), "hardluksan_nls_solver_performance_log.png"), fig)

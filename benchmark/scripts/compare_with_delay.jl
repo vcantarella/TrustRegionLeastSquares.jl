@@ -128,4 +128,4 @@ using Test
 end
 
 fig_nls = build_performance_plots(df_nls_proc)
-save("../test_plots/nlls_solver_performance.png", fig_nls)
+save(joinpath(plots_dir(), "nlls_solver_performance.png"), fig_nls)

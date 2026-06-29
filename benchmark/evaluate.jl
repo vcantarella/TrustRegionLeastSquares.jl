@@ -1,6 +1,15 @@
 using DataFrames
 using CairoMakie
 
+# Directory where benchmark performance plots are written: the repo-root `test_plots/`,
+# resolved relative to THIS file (not the working directory) so scripts save to the same
+# place no matter where julia is launched from. Created on demand.
+function plots_dir()
+    dir = normpath(joinpath(@__DIR__, "..", "test_plots"))
+    isdir(dir) || mkpath(dir)
+    return dir
+end
+
 function compare_with_best(df::DataFrame)
     # Use standard DataFrames - no macro BS
     df_proc = copy(df)
@@ -24,11 +33,16 @@ end
 function evaluate_solvers(df_proc::DataFrame)
     # Use standard DataFrames - no more Tidier headaches
     grouped_df = groupby(df_proc, :solver)
+    # Median time and iterations are computed over SUCCESSFUL solves only. Failed runs
+    # carry time = Inf and iterations = 0 (see the catch branch in dispatch.jl), and runs
+    # that converge to a worse-than-best point are not successes either, so including them
+    # would make the timing comparison meaningless. A solver with no successes reports NaN.
+    median_success(v, mask) = any(mask) ? median(v[mask]) : NaN
     summary_df = combine(
         grouped_df,
         :is_success => (x -> sum(x) / length(x)) => :percentage_success,
-        :iterations => median => :iterations,
-        :time => median => :mean_execution_time,
+        [:iterations, :is_success] => median_success => :median_iterations_success,
+        [:time, :is_success] => median_success => :median_time_success,
     )
     summary_df = sort(summary_df, :percentage_success, rev = true)
     return summary_df

@@ -65,8 +65,6 @@ display(summary_nls)
 
 # 5. Plots
 fig_nls = build_performance_plots(df_nls_proc)
-if !isdir("test_plots")
-    mkdir("test_plots")
-end
-save("test_plots/nonlinearlstr_solver_performance.png", fig_nls)
-println("\nPerformance plot saved to 'test_plots/nonlinearlstr_solver_performance.png'")
+nonlinearlstr_plot_path = joinpath(plots_dir(), "nonlinearlstr_solver_performance.png")
+save(nonlinearlstr_plot_path, fig_nls)
+println("\nPerformance plot saved to '$nonlinearlstr_plot_path'")

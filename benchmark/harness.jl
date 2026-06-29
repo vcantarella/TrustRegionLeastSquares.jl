@@ -1,8 +1,14 @@
 # Cross-package benchmark harness for nonlinearlstr.
 #
 # This is the single entry point the benchmark scripts include. It loads the heavy
-# dependencies and the harness pieces in the right order. Run scripts against the
-# benchmark environment, e.g.:
+# dependencies and the harness pieces in the right order.
+#
+# ONE-TIME SETUP (nonlinearlstr is a local dev package, not registered, so it must be
+# dev'd into this env by path before instantiate can resolve it):
+#
+#   julia --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+#
+# Then run scripts against the benchmark environment, e.g.:
 #
 #   julia --project=benchmark benchmark/scripts/compare_unconstrained.jl
 #

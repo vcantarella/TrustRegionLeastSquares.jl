@@ -55,7 +55,7 @@ using Test
 @test summary_nls[summary_nls[!, :solver] .== "LM-QR", :percentage_success][1] > 0.9
 @test summary_nls[summary_nls[!, :solver] .== "LM-SVD", :percentage_success][1] > 0.9
 fig_nls = build_performance_plots(df_nls_proc)
-save("../test_plots/nlls_solver_performance.png", fig_nls)
+save(joinpath(plots_dir(), "nlls_solver_performance.png"), fig_nls)
 
 # # testing minpack for debugging
 # prob_name = nls_problems[1]
