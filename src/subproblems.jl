@@ -12,10 +12,10 @@ Compute QR factorization with column pivoting for the Jacobian matrix J.
 """
 function factorize(::QRSolve, J)
     n, m = size(J)
-    if n ≥ m 
+    if n ≥ m
         return qr(J, ColumnNorm())
     else
-        return qr(J', ColumnNorm()) 
+        return qr(J', ColumnNorm())
     end
 end
 
@@ -47,12 +47,11 @@ factorize(::SVDSolve, J) = svd(J)
 
 Updates the factorization in `cache`. Tries to use in-place operations to reduce allocations.
 """
-function factorize!(cache::QRSubproblemCache, strategy, J::AbstractMatrix,
-    )
+function factorize!(cache::QRSubproblemCache, strategy, J::AbstractMatrix)
     # 1. Fast Path: If we have a buffer and J is compatible, use in-place
     if cache.J_buffer !== nothing
         # Copy J into the buffer. This avoids allocating a new matrix for the input.
-        
+
 
         if strategy isa QRSolve
             n, m = size(J)
@@ -61,7 +60,7 @@ function factorize!(cache::QRSubproblemCache, strategy, J::AbstractMatrix,
                 cache.factorization = qr!(cache.J_buffer, ColumnNorm())
             else
                 copyto!(cache.J_buffer, J')
-                cache.factorization = qr!(cache.J_buffer, ColumnNorm()) 
+                cache.factorization = qr!(cache.J_buffer, ColumnNorm())
             end
             return cache.factorization
         elseif strategy isa QRrecursiveSolve
@@ -117,7 +116,7 @@ function solve_subproblem(
     f::AbstractVector{T},
     radius::Real,
     cache::QRSubproblemCache,
-) where {St<:QRSolve, T<:Real}
+) where {St<:QRSolve,T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
 
@@ -132,7 +131,7 @@ function solve_subproblem(
         # We must manually calculate the minimum-norm solution.
         P = F.P
         z = cache.z
-        mul!(z, P',-f)
+        mul!(z, P', -f)
         ldiv!(LowerTriangular(F.R'), z)
         mul!(δgn, Matrix(F.Q), z)
     end
@@ -183,13 +182,13 @@ function solve_subproblem(
     f::AbstractVector{T},
     radius::Real,
     cache::QRSubproblemCache,
-) where {St<:Union{SVDSolve, QRrecursiveSolve}, T<:Real}
+) where {St<:Union{SVDSolve,QRrecursiveSolve},T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
 
     # Note: F \ -f might allocate if not careful, but usually acceptable for the check.
     # To be strictly zero-alloc, we would need to ldiv! into cache.p here.
-    δgn = cache.p 
+    δgn = cache.p
     ldiv!(δgn, F, -f)
     # δgn = cache.p
 
@@ -291,9 +290,18 @@ This function solves for λ such that ‖D*p‖ = Δ where p solves:
 Uses Newton's method with safeguarding to find λ. The search is constrained
 between lower bound l₀ = 0 and upper bound u₀ = ‖D*(Jᵀf)‖/Δ.
 """
-function find_λ_scaled_undetermined(strategy::QRSolve, cache, Δ, J, D, f, maxiters, θ = 1e-4)
+function find_λ_scaled_undetermined(
+    strategy::QRSolve,
+    cache,
+    Δ,
+    J,
+    D,
+    f,
+    maxiters,
+    θ = 1e-4,
+)
     l₀ = 0.0
-    u₀ = norm((J'f)./diag(D))/Δ
+    u₀ = norm((J'f) ./ diag(D))/Δ
     λ₀ = max(1e-3*u₀, √(l₀*u₀))
     λ = λ₀
     uₖ = u₀
@@ -302,17 +310,17 @@ function find_λ_scaled_undetermined(strategy::QRSolve, cache, Δ, J, D, f, maxi
     dzdλ = cache.dzdλ
     dpdλ = cache.dpdλ
     z = cache.z
-    b_aug = [zeros(size(J,2)); -1/√λ*f]
+    b_aug = [zeros(size(J, 2)); -1/√λ*f]
     DJ = J' ./ diag(D) # Math: D⁻¹ Jᵀ
     for i = 1:maxiters
-        F = qr([DJ; √λ*I(size(J,1))])
+        F = qr([DJ; √λ*I(size(J, 1))])
         z .= -f
         Ru = UpperTriangular(F.R)
         ldiv!(Ru', z)
         ldiv!(Ru, z)
         # ldiv!(z, F, b_aug)
         mul!(p, J', z)
-        p .= p ./ (diag(D).^2) # D⁻²
+        p .= p ./ (diag(D) .^ 2) # D⁻²
         # p = solve_augmented(strategy, J, D, b_aug, -f, λ)
         if (1-θ)*Δ < norm(D*p) < (1+θ)*Δ
             break
@@ -323,9 +331,9 @@ function find_λ_scaled_undetermined(strategy::QRSolve, cache, Δ, J, D, f, maxi
         else
             lₖ = λ
         end
-        solve_for_dz_dlambda_scaled!(strategy, dzdλ,F, z, D)
+        solve_for_dz_dlambda_scaled!(strategy, dzdλ, F, z, D)
         mul!(dpdλ, J', dzdλ)
-        dpdλ .= dpdλ ./ (diag(D).^2) # D⁻²
+        dpdλ .= dpdλ ./ (diag(D) .^ 2) # D⁻²
         λ = λ - (norm(D*p)-Δ)/Δ*((D*p)'*(D*p)/(p'*D'*(D*dpdλ)))
         if !(lₖ ≤ λ ≤ uₖ)
             λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))

@@ -1,7 +1,7 @@
 
 
 function factorize(::EVDSolve, J)
-    m,n = size(J)
+    m, n = size(J)
     if m ≥ n
         return eigen(J'*J)
     else # m < n
@@ -20,7 +20,7 @@ function factorize!(cache::EVDSubproblemCache, strategy::EVDSolve, J::AbstractMa
     # 1. Fast Path: If we have a buffer and J is compatible, use in-place
     if cache.J_buffer !== nothing
         # Copy J into the buffer. This avoids allocating a new matrix for the input.
-        m,n = size(J)
+        m, n = size(J)
         if m ≥ n
             copyto!(cache.J_buffer, J'*J)
         else # m < n
@@ -78,21 +78,21 @@ function solve_subproblem(
     Dk = cache.scaling_matrix
     z = cache.z
 
-    m,n = size(J)
+    m, n = size(J)
     p = cache.p # alias
 
     if m ≥ n
-       # OVERDETERMINED CASE (F is the EVD of J' * J, size n x n)
+        # OVERDETERMINED CASE (F is the EVD of J' * J, size n x n)
         # Solve: (J' * J) * p = -J' * f
-        
+
         # # 1. Calculate RHS: p = -J' * f 
         # mul!(p, J', -f)
-        p .= Q * (Q' * J'*-f) ./ Λ
-        
+        p .= Q * (Q' * J' * -f) ./ Λ
+
     else # m < n
         # UNDERDETERMINED CASE (F is the EVD of J * J', size m x m)
         # Solve dual: (J * J') * z = -f, then map back: p = J' * z
-        
+
         # 1. Calculate RHS: z = -f
         # z .= -f
 
@@ -170,44 +170,44 @@ function solve_augmented_with_derivative(
     ::EVDSolve,
     F::Eigen,
     J::AbstractMatrix,
-    b::AbstractVector, 
+    b::AbstractVector,
     λ::Real,
 )
     Q = F.vectors
     Λ = F.values
     m, n = size(J)
 
-    
+
     if m ≥ n
         # Reconstruct in the primal space
-         # 1. Project b onto the eigenvectors (Do this ONCE)
-        q_b = Q' * J' * b 
-        
+        # 1. Project b onto the eigenvectors (Do this ONCE)
+        q_b = Q' * J' * b
+
         # 2. Calculate the scaling factors for p and dp/dλ
         # Notice the element-wise division and the square (.^2) for the derivative
         scale_p = q_b ./ (Λ .+ λ)
-        scale_dp = .-q_b ./ ((Λ .+ λ).^2) # The negative sign is crucial here!
+        scale_dp = .-q_b ./ ((Λ .+ λ) .^ 2) # The negative sign is crucial here!
         p = Q * scale_p
         dpdλ = Q * scale_dp
-        
+
         return p, dpdλ
-        
+
     else # m < n
         # 1. Project b onto the eigenvectors (Do this ONCE)
-        q_b = Q' * b 
-        
+        q_b = Q' * b
+
         # 2. Calculate the scaling factors for p and dp/dλ
         # Notice the element-wise division and the square (.^2) for the derivative
         scale_p = q_b ./ (Λ .+ λ)
-        scale_dp = .-q_b ./ ((Λ .+ λ).^2) # The negative sign is crucial here!
+        scale_dp = .-q_b ./ ((Λ .+ λ) .^ 2) # The negative sign is crucial here!
         # Reconstruct in the dual space
         z = Q * scale_p
         dz_dλ = Q * scale_dp
-        
+
         # Map both back to the primal space
         p = J' * z
         dpdλ = J' * dz_dλ
-        
+
         return p, dpdλ
     end
 end

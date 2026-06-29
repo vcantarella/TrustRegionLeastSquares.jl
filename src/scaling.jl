@@ -43,5 +43,5 @@ end
 
 
 function scaling!(D::AbstractMatrix, scaling_strat::NoScaling; kwargs...)
-    @inbounds [D[i,i] = one(eltype(D)) for i in size(D,1)]
+    @inbounds [D[i, i] = one(eltype(D)) for i in size(D, 1)]
 end

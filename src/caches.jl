@@ -43,7 +43,7 @@ mutable struct QRSubproblemCache{S<:SubProblemStrategy,F,D,T,M} <: AbstractSubpr
 
         p = zeros(T, m)
         p_newton = zeros(T, m)
-        dpdλ = zeros(T,m)
+        dpdλ = zeros(T, m)
         z = zeros(T, n)
         dzdλ = zeros(T, n)
         R_buffer = zeros(T, m, m)
@@ -87,7 +87,7 @@ mutable struct EVDSubproblemCache{S<:EVDSolve,F,D,T,M} <: AbstractSubproblemCach
         scaling_strat::Sc,
         J::AbstractMatrix{T};
         kwargs...,
-    ) where {S<:EVDSolve, Sc<:ScalingStrategy, T}
+    ) where {S<:EVDSolve,Sc<:ScalingStrategy,T}
 
         n, m = size(J)
         F = factorize(strategy, J)
@@ -108,27 +108,32 @@ mutable struct EVDSubproblemCache{S<:EVDSolve,F,D,T,M} <: AbstractSubproblemCach
         z = zeros(T, n)
 
 
-        new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(
-            F,
-            Dk,
-            J_buffer,
-            p,
-            p_newton,
-            z
-        )
+        new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(F, Dk, J_buffer, p, p_newton, z)
     end
 end
 
 # Defining the end point for the functions
-SubproblemCache(subproblem_strategy::QRrecursiveSolve, scaling_strategy::ScalingStrategy, J::AbstractMatrix) = 
-    QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
+SubproblemCache(
+    subproblem_strategy::QRrecursiveSolve,
+    scaling_strategy::ScalingStrategy,
+    J::AbstractMatrix,
+) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
 
-SubproblemCache(subproblem_strategy::QRSolve, scaling_strategy::ScalingStrategy, J::AbstractMatrix) = 
-    QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
+SubproblemCache(
+    subproblem_strategy::QRSolve,
+    scaling_strategy::ScalingStrategy,
+    J::AbstractMatrix,
+) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
 
-SubproblemCache(subproblem_strategy::SVDSolve, scaling_strategy::ScalingStrategy, J::AbstractMatrix) = 
-    QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
+SubproblemCache(
+    subproblem_strategy::SVDSolve,
+    scaling_strategy::ScalingStrategy,
+    J::AbstractMatrix,
+) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
 
 # Map the EVD strategy to its specialized cache
-SubproblemCache(subproblem_strategy::EVDSolve, scaling_strategy::ScalingStrategy, J::AbstractMatrix) = 
-    EVDSubproblemCache(subproblem_strategy, scaling_strategy, J)
+SubproblemCache(
+    subproblem_strategy::EVDSolve,
+    scaling_strategy::ScalingStrategy,
+    J::AbstractMatrix,
+) = EVDSubproblemCache(subproblem_strategy, scaling_strategy, J)

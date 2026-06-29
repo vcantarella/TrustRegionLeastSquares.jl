@@ -26,7 +26,7 @@ mutable struct QRCholCache{F,Fa,D,T} <: SolverCache
         J_aug_buffer = Matrix(J'J + I)
         F = qr!(J_buffer, ColumnNorm())
         Fa = cholesky!(J_aug_buffer)
-        D = one(T).*I(m)
+        D = one(T) .* I(m)
         scaling!(D, scaling_strat; kwargs...)
 
         p = zeros(T, m)
@@ -36,21 +36,16 @@ mutable struct QRCholCache{F,Fa,D,T} <: SolverCache
         D² = D*D
         JᵀJ = J'J
 
-        new{typeof(F),typeof(Fa),typeof(D),T}(
-            F,
-            D,
-            Fa,
-            p,
-            q,
-            b_aug,
-            D²p,
-            D²,
-            JᵀJ,
-            )
+        new{typeof(F),typeof(Fa),typeof(D),T}(F, D, Fa, p, q, b_aug, D²p, D², JᵀJ)
     end
 end
 
-function subproblem_cache_init(strat::S, scaling_strat::Sc, J::AbstractMatrix; kwargs...) where {S<:Strategy, Sc<:ScalingStrategy}
+function subproblem_cache_init(
+    strat::S,
+    scaling_strat::Sc,
+    J::AbstractMatrix;
+    kwargs...,
+) where {S<:Strategy,Sc<:ScalingStrategy}
     if strat isa QRCholStrategy
         return QRCholCache(strat, scaling_strat, J; kwargs...)
     end

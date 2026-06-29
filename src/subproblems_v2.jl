@@ -41,7 +41,7 @@ function solve_subproblem(
             else
                 lₖ = λ
             end
-            q .= diag(D).^2 .* p
+            q .= diag(D) .^ 2 .* p
             ldiv!(LowerTriangular(F.R'), q)
             denom = norm(q)^2
             λ = λ - ϕ/Δ*norm_Dp^2/denom
@@ -64,12 +64,12 @@ function solve_subproblem(
 ) where {T<:Real}
     F = cache.factorization
     D = cache.scaling_matrix
-    n,m = size(J)
+    n, m = size(J)
 
     p = cache.p
     P = F.P
     z = cache.z
-    mul!(z, P',-f)
+    mul!(z, P', -f)
     ldiv!(LowerTriangular(F.R'), z)
     mul!(p, Matrix(F.Q), z)
     if norm(p) <= Δ
@@ -96,7 +96,7 @@ function solve_subproblem(
             ldiv!(Lu, z)
             ldiv!(Ru, z)
             mul!(p, J', z)
-            p .= p ./ (diag(D).^2) # D⁻²
+            p .= p ./ (diag(D) .^ 2) # D⁻²
             mul!(Dp, D, p)
             norm_Dp = norm(Dp)
             if (1-θ)*Δ < norm_Dp < (1+θ)*Δ
@@ -165,7 +165,7 @@ function solve_subproblem(
             else
                 lₖ = λ
             end
-            q .= diag(D).^2 .* p
+            q .= diag(D) .^ 2 .* p
             ldiv!(LowerTriangular(F.R'), q)
             denom = norm(q)^2
             λ = λ - ϕ/Δ*norm_Dp^2/denom

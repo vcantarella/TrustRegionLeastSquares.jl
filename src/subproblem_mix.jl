@@ -1,7 +1,6 @@
 
 
-function factorize_aug!(cache::QRCholCache, A::AbstractMatrix,
-    )
+function factorize_aug!(cache::QRCholCache, A::AbstractMatrix)
     copyto!(cache.factorization_aug.factors, A)
     cache.factorization_aug = cholesky!(cache.factorization_aug.factors)
 end
@@ -17,7 +16,7 @@ function solve_subproblem(
 ) where {T<:Real}
     F = cache.factorization
     D = cache.scaling_matrix
-    n,m = size(J)
+    n, m = size(J)
     p = cache.p
     ldiv!(p, F, -f)
     if norm(p) <= Δ
@@ -36,7 +35,7 @@ function solve_subproblem(
         q = cache.q
         JᵀJ = cache.JᵀJ
         mul!(b_aug, -J', f)
-        mul!(JᵀJ, J',J)
+        mul!(JᵀJ, J', J)
         mul!(D², D, D)
         niters = 0
         for i = 1:maxiters
@@ -62,7 +61,7 @@ function solve_subproblem(
             if !(lₖ ≤ λ ≤ uₖ)
                 λ = max(lₖ+0.01*(uₖ-lₖ), √(lₖ*uₖ))
             end
-            niters +=1
+            niters += 1
         end
         println("Iterations: $niters")
         return λ
