@@ -34,7 +34,7 @@ function evaluate_solvers(df_proc::DataFrame)
     # Use standard DataFrames - no more Tidier headaches
     grouped_df = groupby(df_proc, :solver)
     # Median time and iterations are computed over SUCCESSFUL solves only. Failed runs
-    # carry time = Inf and iterations = 0 (see the catch branch in dispatch.jl), and runs
+    # may carry time = Inf and iterations = 0 (see the catch branch in dispatch.jl), and runs
     # that converge to a worse-than-best point are not successes either, so including them
     # would make the timing comparison meaningless. A solver with no successes reports NaN.
     median_success(v, mask) = any(mask) ? median(v[mask]) : NaN
@@ -49,54 +49,72 @@ function evaluate_solvers(df_proc::DataFrame)
 end
 
 function build_performance_plots(df_proc::DataFrame)
-    colormap = :Paired_12
-    fig = Figure()
-    # Plot 1: Fraction solved vs time
+    solvers = sort(unique(df_proc.solver))
+    n_solvers = length(solvers)
+    num_problems = length(unique(df_proc.problem))
+
+    # One distinct color per solver (tab20 gives up to 20 well-separated categorical hues),
+    # reused in BOTH panels so a solver looks identical in the profile and the bar chart.
+    # Colors alone aren't enough to tell ~13 curves apart, so we also cycle the line style.
+    palette = Makie.resample_cmap(:tab20, max(n_solvers, 2))
+    color_of = Dict(s => palette[i] for (i, s) in enumerate(solvers))
+    linestyles = [:solid, :dash, :dot, :dashdot]
+
+    fig = Figure(size = (1100, 850))
+
+    # Panel 1: performance profile — for each solver, the fraction of all problems it has
+    # SOLVED within a given wall-clock time. Only successful, finite-time solves count; we
+    # plot a proper right-continuous step (a solver's curve jumps as each problem is solved).
     ax1 = Axis(
         fig[1, 1],
-        xlabel = "Time (seconds, log scale)",
-        ylabel = "Fraction of Problems Solved",
-        ylabelsize = 12,
-        title = "Performance Profile",
+        xlabel = "Time (s, log scale)",
+        ylabel = "Fraction of problems solved",
+        title = "Performance profile",
         xscale = log10,
     )
-    solvers = sort(unique(df_proc.solver))
-    problems = unique(df_proc.problem)
-    num_problems = length(problems)
-    c = 1 # color index
-    for solver_n in solvers
-        df_solver = filter(row -> row.solver == solver_n, df_proc)
-        sort!(df_solver, :time)
-        df_solver.cumulative_success = cumsum(df_solver.is_success) ./ num_problems
-        lines!(
+    for (i, solver_n) in enumerate(solvers)
+        df_s = filter(
+            r -> r.solver == solver_n && r.is_success && isfinite(r.time) && r.time > 0,
+            df_proc,
+        )
+        isempty(df_s) && continue
+        sort!(df_s, :time)
+        frac = (1:nrow(df_s)) ./ num_problems
+        stairs!(
             ax1,
-            df_solver.time,
-            df_solver.cumulative_success,
+            df_s.time,
+            frac;
             label = solver_n,
+            color = color_of[solver_n],
+            linestyle = linestyles[mod1(i, length(linestyles))],
             linewidth = 2,
-            colormap = colormap,
+            step = :post,
         )
     end
-    # Plot 2: Success rate comparison
+    ylims!(ax1, 0, 1)
+
+    # Panel 2: success rate as a HORIZONTAL bar chart, sorted best-first, so the full solver
+    # names sit on the y-axis with room (no rotated/truncated/overlapping x labels). Bars are
+    # colored to match each solver's profile curve.
+    summary_df = evaluate_solvers(df_proc)   # already sorted by percentage_success desc
+    n = nrow(summary_df)
     ax2 = Axis(
         fig[2, 1],
-        xlabel = "Solver",
-        ylabel = "Success Rate (%)",
-        title = "Success Rate by Solver",
-        xticklabelrotation = (30/180)*π,
+        xlabel = "Success rate (%)",
+        title = "Success rate by solver",
+        yticks = (1:n, summary_df.solver),
+        yreversed = true,   # highest success rate on top
     )
-    summary_df = evaluate_solvers(df_proc)
-    n_solvers = nrow(summary_df)
-    truncated_names = [s[1:min(10, length(s))] for s in summary_df.solver]
-    ax2.xticks = (1:n_solvers, truncated_names)
     barplot!(
         ax2,
-        1:n_solvers,
-        summary_df.percentage_success .* 100,
-        color = :steelblue,
-        alpha = 0.7,
+        1:n,
+        summary_df.percentage_success .* 100;
+        direction = :x,
+        color = [color_of[s] for s in summary_df.solver],
     )
-    Legend(fig[1:2, 2], ax1, "Solvers", merge = true)
+    xlims!(ax2, 0, 100)
+
+    Legend(fig[1, 2], ax1, "Solvers", merge = true, framevisible = true)
     resize_to_layout!(fig)
     return fig
 end
