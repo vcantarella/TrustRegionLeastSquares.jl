@@ -142,14 +142,14 @@ function solve_subproblem(
     src_R = hasproperty(F, :factors) ? F.factors : F.R
     if m >= n
         @inbounds for j = 1:n, k = 1:j
-            ;
-            cache.R_buffer[k, j] = src_R[k, j];
+
+            cache.R_buffer[k, j] = src_R[k, j]
         end
     else
         fill!(cache.R_buffer, 0.0)
         @inbounds for j = 1:n, k = 1:min(j, m)
-            ;
-            cache.R_buffer[k, j] = src_R[k, j];
+
+            cache.R_buffer[k, j] = src_R[k, j]
         end
     end
 
@@ -252,14 +252,14 @@ function find_λ_colemanandli(
 
         if m >= n
             @inbounds for j = 1:n, k = 1:j
-                ;
-                R_buffer[k, j] = src_R[k, j];
+
+                R_buffer[k, j] = src_R[k, j]
             end
         else
             fill!(R_buffer, 0.0)
             @inbounds for j = 1:n, k = 1:min(j, m)
-                ;
-                R_buffer[k, j] = src_R[k, j];
+
+                R_buffer[k, j] = src_R[k, j]
             end
         end
 
@@ -288,11 +288,11 @@ function find_λ_colemanandli(
 
         ϕ = norm_Dp - Δ
         if ϕ < 0
-            ;
-            uₖ = λ;
+
+            uₖ = λ
         else
-            ;
-            lₖ = λ;
+
+            lₖ = λ
         end
 
         # Derivative

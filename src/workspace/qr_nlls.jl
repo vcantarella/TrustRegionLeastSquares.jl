@@ -136,7 +136,7 @@ function lsq_box(
     @. x = clamp(x, lo, hi)
     #AᵀA = A'*A
     Aᵀb = A'b
-    g = A'*(A*x);
+    g = A'*(A*x)
     g .-= Aᵀb # gradient ∇ₓ of ½‖b - Ax‖²
     inactive = Bool[
         lo[i] < hi[i] && (x[i] != lo[i] || g[i] ≤ 0) && (x[i] != hi[i] || g[i] ≥ 0) for
