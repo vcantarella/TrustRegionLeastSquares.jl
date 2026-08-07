@@ -42,6 +42,12 @@ function scaling(::ColemanandLiScaling, J; x, lb, ub, g, τ = 1e-12)
 end
 
 
+# Plain loop on purpose: an assignment inside a comprehension (`[D[i,i] = ... for ...]`)
+# triggers a JuliaFormatter v2 bug that rewrites the `=` into `in`, silently changing
+# the code's meaning — and it kept the repo permanently failing the CI format check.
 function scaling!(D::AbstractMatrix, scaling_strat::NoScaling; kwargs...)
-    @inbounds [D[i, i] = one(eltype(D)) for i in size(D, 1)]
+    @inbounds for i in axes(D, 1)
+        D[i, i] = one(eltype(D))
+    end
+    return D
 end
