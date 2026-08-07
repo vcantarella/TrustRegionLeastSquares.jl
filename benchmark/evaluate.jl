@@ -160,7 +160,9 @@ function build_performance_plots(
     ok = filter(r -> r.is_success && isfinite(r.time) && r.time > 0, df_proc)
     best_time = Dict(g.problem[1] => minimum(g.time) for g in groupby(ok, :problem))
     ratios_of = Dict(
-        s => sort([r.time / best_time[r.problem] for r in eachrow(ok) if r.solver == s]) for s in solvers
+        s =>
+            sort([r.time / best_time[r.problem] for r in eachrow(ok) if r.solver == s])
+        for s in solvers
     )
     τmax = maximum(rs -> isempty(rs) ? 1.0 : rs[end], values(ratios_of); init = 1.0)
 
@@ -260,7 +262,8 @@ function build_performance_plots(
     spd(v) =
         !isfinite(v) ? "—" :
         v < 0.095 ? @sprintf("%.3f×", v) :
-        v < 0.95 ? @sprintf("%.2f×", v) : v < 9.5 ? @sprintf("%.1f×", v) : @sprintf("%.0f×", v)
+        v < 0.95 ? @sprintf("%.2f×", v) :
+        v < 9.5 ? @sprintf("%.1f×", v) : @sprintf("%.0f×", v)
 
     ax2 = Axis(
         right[legend ? 2 : 1, 1],
@@ -300,9 +303,9 @@ function build_performance_plots(
         colorrange = (0, 1 / 0.7),   # best-in-column ⇒ ~70% of the ramp: strong tint, ink still reads
         nan_color = :transparent,
     )
-    hlines!(ax2, collect(0.5:1:(n + 0.5)); xmin = 0.4, color = :white, linewidth = 2)
+    hlines!(ax2, collect(0.5:1:(n+0.5)); xmin = 0.4, color = :white, linewidth = 2)
     vlines!(ax2, [1.5]; color = :white, linewidth = 2)
-    for i in 1:n
+    for i = 1:n
         text!(
             ax2,
             0.42,
