@@ -44,6 +44,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
     """Test a single solver on a problem"""
     try
         if solver_name in [
+            "This work",   # poster label for LM-QR
             "LM-QR",
             "LM-QR-scaled",
             "LM-SVD",
@@ -60,7 +61,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             end
             if contains(solver_name, "Recursive")
                 subproblem_strategy = nonlinearlstr.QRrecursiveSolve()
-            elseif contains(solver_name, "QR")
+            elseif contains(solver_name, "QR") || solver_name == "This work"
                 subproblem_strategy = nonlinearlstr.QRSolve()
             elseif contains(solver_name, "SVD")
                 subproblem_strategy = nonlinearlstr.SVDSolve()
@@ -340,6 +341,34 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             g_opt = prob_data.grad_func(x_opt)
             iterations = result.niterations
             converged = result.termination > 0
+        elseif solver_name in ["Optim-BFGS", "Optim-L-BFGS"]
+            # Quasi-Newton baselines on the scalar objective 0.5‖r‖² (Optim.jl).
+            # Out-of-place obj/grad closures, hence inplace = false.
+            method = solver_name == "Optim-BFGS" ? Optim.BFGS() : Optim.LBFGS()
+            optim_opts = Optim.Options(iterations = max_iter, g_tol = 1e-6)
+            res = Optim.optimize(
+                prob_data.obj_func,
+                prob_data.grad_func,
+                copy(prob_data.x0),
+                method,
+                optim_opts;
+                inplace = false,
+            )
+            t = minimum(
+                @be Optim.optimize(
+                    prob_data.obj_func,
+                    prob_data.grad_func,
+                    copy(prob_data.x0),
+                    method,
+                    optim_opts;
+                    inplace = false,
+                )
+            ).time
+            x_opt = Optim.minimizer(res)
+            final_cost = prob_data.obj_func(x_opt)
+            g_opt = prob_data.grad_func(x_opt)
+            iterations = Optim.iterations(res)
+            converged = Optim.converged(res)
         elseif contains(solver_name, "LsqFit")
             # LsqFit wants: model(xdata, p) ≈ ydata
             # We want: r(p) ≈ 0

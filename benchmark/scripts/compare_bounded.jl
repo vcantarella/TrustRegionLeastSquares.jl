@@ -10,9 +10,19 @@ using DataFrames
 using nonlinearlstr
 using Test
 
-# 1. Find and prepare problems
-nls_problems = find_bounded_problems(100)  # Limit size for testing
-custom_problems = [:KowalikOsborne, :Meyer, :Osborne1, :BoxBOD, :AlphaPinene]
+# 1. Find and prepare problems from three sources:
+#    - NLSProblems.jl bound-constrained NLS (Hock-Schittkowski / Schittkowski hs*, tp*)
+#    - CUTEst bound-constrained NLS (objtype="none" + finite variable bounds); residuals are
+#      the constraints. Guarded so the script still runs if CUTEst isn't installed.
+#    - curated ADNLSModel set (MGH analytic + NIST StRD, mix of active/realistic bounds)
+nls_problems = find_bounded_problems(100)
+try
+    append!(nls_problems, find_cutest_bounded_nlls_problems(50))
+catch e
+    @warn "Skipping CUTEst bounded problems (CUTEst unavailable?)" exception =
+        (e, catch_backtrace())
+end
+custom_problems = nameof.(get_custom_problems())   # all 15 ADNLSModel constructors
 append!(nls_problems, custom_problems)
 # 2. Define solvers
 solvers = [

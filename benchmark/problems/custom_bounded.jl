@@ -293,9 +293,284 @@ function AlphaPinene()
     return ADNLSModel(pinene_residual, x0, 40, lvar, uvar, name = "AlphaPinene")
 end
 
-# Helper to return all new problems as a list of functions
+# ---------------------------------------------------------------------------------------
+# Moré-Garbow-Hillstrom (MGH, 1981) analytic NLS problems with designed box constraints.
+#
+# These have closed-form residuals and KNOWN unconstrained minimizers, so the bounds can be
+# chosen to be genuinely ACTIVE (the box clips the unconstrained optimum on >=1 coordinate)
+# or REALISTIC (physically motivated, usually inactive). Each problem's docstring states the
+# unconstrained minimizer x* and the bound regime. No data tables -> no transcription risk.
+# ---------------------------------------------------------------------------------------
+
+"""
+    RosenbrockBounded()
+
+MGH #1 (Rosenbrock). F = [10(x2 - x1^2), 1 - x1]; unconstrained min x* = (1, 1), f = 0.
+Bounds: ACTIVE — uvar = [0.5, Inf] clips x1 (wants 1) to 0.5.
+2 variables, 2 residuals.
+"""
+function RosenbrockBounded()
+    function res(x)
+        return [10.0 * (x[2] - x[1]^2), 1.0 - x[1]]
+    end
+    x0 = [-1.2, 1.0]
+    lvar = [-2.0, -2.0]
+    uvar = [0.5, 2.0]
+    return ADNLSModel(res, x0, 2, lvar, uvar, name = "RosenbrockBounded")
+end
+
+"""
+    BealeBounded()
+
+MGH #5 (Beale). f_i = y_i - x1 (1 - x2^i), y = [1.5, 2.25, 2.625], i = 1,2,3.
+Unconstrained min x* = (3, 0.5), f = 0. Bounds: ACTIVE — uvar = [2.0, 0.9] clips x1 (wants 3).
+2 variables, 3 residuals.
+"""
+function BealeBounded()
+    y = [1.5, 2.25, 2.625]
+    function res(x)
+        r = zeros(eltype(x), 3)
+        for i = 1:3
+            r[i] = y[i] - x[1] * (1.0 - x[2]^i)
+        end
+        return r
+    end
+    x0 = [1.0, 1.0]
+    lvar = [0.0, 0.0]
+    uvar = [2.0, 0.9]
+    return ADNLSModel(res, x0, 3, lvar, uvar, name = "BealeBounded")
+end
+
+"""
+    PowellBadlyScaled()
+
+MGH #3 (Powell badly scaled). f1 = 1e4 x1 x2 - 1; f2 = exp(-x1) + exp(-x2) - 1.0001.
+Unconstrained min x* ≈ (1.098e-5, 9.106), f = 0. Bounds: REALISTIC — non-negative (inactive).
+2 variables, 2 residuals.
+"""
+function PowellBadlyScaled()
+    function res(x)
+        return [1.0e4 * x[1] * x[2] - 1.0, exp(-x[1]) + exp(-x[2]) - 1.0001]
+    end
+    x0 = [0.0, 1.0]
+    lvar = [0.0, 0.0]
+    uvar = [Inf, Inf]
+    return ADNLSModel(res, x0, 2, lvar, uvar, name = "PowellBadlyScaled")
+end
+
+"""
+    BrownBadlyScaled()
+
+MGH #4 (Brown badly scaled). f1 = x1 - 1e6; f2 = x2 - 2e-6; f3 = x1 x2 - 2.
+Unconstrained min x* = (1e6, 2e-6), f = 0. Bounds: ACTIVE — uvar = [1e5, Inf] clips x1.
+2 variables, 3 residuals.
+"""
+function BrownBadlyScaled()
+    function res(x)
+        return [x[1] - 1.0e6, x[2] - 2.0e-6, x[1] * x[2] - 2.0]
+    end
+    x0 = [1.0, 1.0]
+    lvar = [0.0, 0.0]
+    uvar = [1.0e5, Inf]
+    return ADNLSModel(res, x0, 3, lvar, uvar, name = "BrownBadlyScaled")
+end
+
+"""
+    FreudensteinRoth()
+
+MGH #2 (Freudenstein and Roth). f1 = -13 + x1 + ((5 - x2) x2 - 2) x2;
+f2 = -29 + x1 + ((x2 + 1) x2 - 14) x2. Global min x* = (5, 4), f = 0 (interior).
+Bounds: REALISTIC — non-negative box, optimum interior (inactive).
+2 variables, 2 residuals.
+"""
+function FreudensteinRoth()
+    function res(x)
+        f1 = -13.0 + x[1] + ((5.0 - x[2]) * x[2] - 2.0) * x[2]
+        f2 = -29.0 + x[1] + ((x[2] + 1.0) * x[2] - 14.0) * x[2]
+        return [f1, f2]
+    end
+    x0 = [0.5, -2.0]
+    lvar = [0.0, 0.0]
+    uvar = [Inf, Inf]
+    return ADNLSModel(res, x0, 2, lvar, uvar, name = "FreudensteinRoth")
+end
+
+"""
+    HelicalValleyBounded()
+
+MGH #7 (Helical valley). 3D helix; unconstrained min x* = (1, 0, 0), f = 0.
+Bounds: ACTIVE — lvar = [2.0, -10, -10] forces x1 >= 2 (wants 1).
+3 variables, 3 residuals.
+"""
+function HelicalValleyBounded()
+    function res(x)
+        # Two-argument atan gives the proper quadrant angle without a branch (the original
+        # MGH x1>0/x1<0 split is exactly atan2), keeping it safe for AD/sparsity tracers.
+        θ = atan(x[2], x[1]) / (2π)
+        f1 = 10.0 * (x[3] - 10.0 * θ)
+        f2 = 10.0 * (sqrt(x[1]^2 + x[2]^2) - 1.0)
+        f3 = x[3]
+        return [f1, f2, f3]
+    end
+    x0 = [-1.0, 0.0, 0.0]
+    lvar = [2.0, -10.0, -10.0]
+    uvar = [10.0, 10.0, 10.0]
+    return ADNLSModel(res, x0, 3, lvar, uvar, name = "HelicalValleyBounded")
+end
+
+"""
+    JennrichSampson()
+
+MGH #6 (Jennrich and Sampson). f_i = 2 + 2 i - (exp(i x1) + exp(i x2)), i = 1..10.
+Min f ≈ 124.362 at x1 = x2 ≈ 0.2578 (interior). Bounds: REALISTIC — non-negative (inactive).
+2 variables, 10 residuals.
+"""
+function JennrichSampson()
+    function res(x)
+        r = zeros(eltype(x), 10)
+        for i = 1:10
+            r[i] = 2.0 + 2.0 * i - (exp(i * x[1]) + exp(i * x[2]))
+        end
+        return r
+    end
+    x0 = [0.3, 0.4]
+    lvar = [0.0, 0.0]
+    uvar = [Inf, Inf]
+    return ADNLSModel(res, x0, 10, lvar, uvar, name = "JennrichSampson")
+end
+
+"""
+    Box3DBounded()
+
+MGH #12 (Box 3-D). f_i = exp(-t_i x1) - exp(-t_i x2) - x3 (exp(-t_i) - exp(-10 t_i)),
+t_i = 0.1 i, i = 1..10. Unconstrained min x* = (1, 10, 1), f = 0.
+Bounds: ACTIVE — uvar = [Inf, 5.0, Inf] clips x2 (wants 10).
+3 variables, 10 residuals.
+"""
+function Box3DBounded()
+    t = [0.1 * i for i = 1:10]
+    function res(x)
+        r = zeros(eltype(x), 10)
+        for i = 1:10
+            r[i] =
+                exp(-t[i] * x[1]) - exp(-t[i] * x[2]) -
+                x[3] * (exp(-t[i]) - exp(-10.0 * t[i]))
+        end
+        return r
+    end
+    x0 = [0.0, 10.0, 20.0]
+    lvar = [0.0, 0.0, -10.0]
+    uvar = [Inf, 5.0, Inf]
+    return ADNLSModel(res, x0, 10, lvar, uvar, name = "Box3DBounded")
+end
+
+# ---------------------------------------------------------------------------------------
+# NIST StRD nonlinear-regression problems (certified data + solutions, fetched verbatim
+# from itl.nist.gov/div898/strd/nls). Real data-fitting problems with box constraints.
+# ---------------------------------------------------------------------------------------
+
+"""
+    Misra1aBounded()
+
+NIST StRD Misra1a. Model y = b1 (1 - exp(-b2 x)). Certified (b1, b2) = (238.942, 5.5016e-4),
+residual sum of squares 0.12455 (so ‖F‖ ≈ 0.3529). 14 observations.
+Bounds: ACTIVE — uvar = [200, Inf] clips b1 (certified 238.9 > 200).
+2 variables, 14 residuals.
+"""
+function Misra1aBounded()
+    x = [
+        77.6,
+        114.9,
+        141.1,
+        190.8,
+        239.9,
+        289.0,
+        332.8,
+        378.4,
+        434.8,
+        477.3,
+        536.8,
+        593.1,
+        689.1,
+        760.0,
+    ]
+    y = [
+        10.07,
+        14.73,
+        17.94,
+        23.93,
+        29.61,
+        35.18,
+        40.02,
+        44.82,
+        50.76,
+        55.05,
+        61.01,
+        66.40,
+        75.47,
+        81.78,
+    ]
+    function res(b)
+        r = zeros(eltype(b), 14)
+        for i = 1:14
+            r[i] = b[1] * (1.0 - exp(-b[2] * x[i])) - y[i]
+        end
+        return r
+    end
+    x0 = [100.0, 2.0e-4]
+    lvar = [0.0, 0.0]
+    uvar = [200.0, Inf]
+    return ADNLSModel(res, x0, 14, lvar, uvar, name = "Misra1aBounded")
+end
+
+"""
+    Rat42Bounded()
+
+NIST StRD Rat42 (sigmoidal growth). Model y = b1 / (1 + exp(b2 - b3 x)).
+Certified (b1, b2, b3) = (72.462, 2.6181, 0.067359), RSS 8.0565 (so ‖F‖ ≈ 2.838). 9 obs.
+Bounds: REALISTIC — b1, b3 >= 0 (both certified positive, so inactive).
+3 variables, 9 residuals.
+"""
+function Rat42Bounded()
+    x = [9.0, 14.0, 21.0, 28.0, 42.0, 57.0, 63.0, 70.0, 79.0]
+    y = [8.93, 10.80, 18.59, 22.33, 39.35, 56.11, 61.73, 64.62, 67.08]
+    function res(b)
+        r = zeros(eltype(b), 9)
+        for i = 1:9
+            r[i] = b[1] / (1.0 + exp(b[2] - b[3] * x[i])) - y[i]
+        end
+        return r
+    end
+    x0 = [100.0, 1.0, 0.1]
+    lvar = [0.0, -Inf, 0.0]
+    uvar = [Inf, Inf, Inf]
+    return ADNLSModel(res, x0, 9, lvar, uvar, name = "Rat42Bounded")
+end
+
+# Problems whose box is designed to be ACTIVE at the optimum (stress the projection logic).
+function get_active_bound_problems()
+    return [
+        RosenbrockBounded,
+        BealeBounded,
+        BrownBadlyScaled,
+        HelicalValleyBounded,
+        Box3DBounded,
+        Misra1aBounded,
+    ]
+end
+
+# Problems with realistic (usually inactive) bounds.
+function get_realistic_bound_problems()
+    return [PowellBadlyScaled, FreudensteinRoth, JennrichSampson, Rat42Bounded]
+end
+
+# Helper to return all custom bounded problems as a list of constructor functions.
 function get_custom_problems()
-    return [KowalikOsborne, Meyer, Osborne1, BoxBOD, AlphaPinene]
+    return vcat(
+        [KowalikOsborne, Meyer, Osborne1, BoxBOD, AlphaPinene],
+        get_active_bound_problems(),
+        get_realistic_bound_problems(),
+    )
 end
 
 # Helper: Generic matrix exponential compatible with ForwardDiff and Tracers

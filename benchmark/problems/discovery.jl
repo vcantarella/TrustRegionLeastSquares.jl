@@ -16,6 +16,45 @@ function find_cutest_nlls_problems(max_vars = 50)
     return valid_problems
 end
 
+function find_cutest_bounded_nlls_problems(max_vars = 50)
+    """
+    Find CUTEst BOUND-constrained nonlinear least squares problems.
+
+    CUTEst encodes NLS problems with objtype="none": the residuals are the constraints
+    (`cons(nlp, x)` -> F) and the residual Jacobian is the constraint Jacobian
+    (`jac(nlp, x)` -> J). A bound-constrained NLS problem is therefore one of these that
+    ALSO has at least one finite variable bound in `meta.lvar`/`meta.uvar`. The box is
+    consumed directly by `create_cutest_functions` (which copies lvar/uvar).
+    """
+    candidates = CUTEst.select_sif_problems(objtype = "none", max_var = max_vars)
+    valid_problems = String[]
+    for prob_name in candidates
+        nlp = CUTEstModel(prob_name)
+        lvar, uvar = nlp.meta.lvar, nlp.meta.uvar
+        # A genuinely BOUNDED variable has a finite bound AND is not FIXED (lvar < uvar).
+        # Fixed variables also have finite lvar==uvar, so a naive `any(isfinite, ...)` test
+        # wrongly treats fixed-variable equality systems (e.g. TRIGGER, NYSTROM5, AIRCRFTA,
+        # which have only fixed/free vars and no bounds) as bound-constrained. Require a real
+        # bound.
+        has_real_bounds = any(
+            i -> (isfinite(lvar[i]) || isfinite(uvar[i])) && lvar[i] < uvar[i],
+            eachindex(lvar),
+        )
+        # The residuals-as-constraints interpretation (min ‖cons(x) - lcon‖ s.t. bounds) is
+        # only valid when every constraint is an EQUALITY (lcon == ucon). Skip anything with
+        # inequality/range constraints.
+        equality_only = nlp.meta.ncon > 0 && all(nlp.meta.lcon .== nlp.meta.ucon)
+        if equality_only && has_real_bounds && nlp.meta.nvar <= max_vars
+            push!(valid_problems, prob_name)
+        end
+        finalize(nlp)
+    end
+    println(
+        "Found $(length(valid_problems)) bound-constrained NLS problems (≤ $max_vars variables)",
+    )
+    return valid_problems
+end
+
 
 function find_nlls_problems(max_vars = 50)
     """Find NLS problems from NLSProblems.jl package"""

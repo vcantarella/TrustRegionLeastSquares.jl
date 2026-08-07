@@ -20,19 +20,16 @@ let probs = find_nlls_problems(MAX_VARS)
 end
 
 solvers = [
-    # nonlinearlstr solvers (keep all)
-    ("LM-QR", nonlinearlstr.lm_trust_region!),
-    ("LM-SVD", nonlinearlstr.lm_trust_region!),
-    ("LM-QR-Recursive", nonlinearlstr.lm_trust_region!),
+    # nonlinearlstr (LM-QR, the method this poster presents)
+    ("This work", nonlinearlstr.lm_trust_region!),
 
     # PRIMA (Best: NEWUOA for unconstrained)
     ("PRIMA-NEWUOA", nothing),
 
-    # NonlinearSolve.jl (keep all)
-    ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),
-    ("NonlinearSolve-LevenbergMarquardt", NonlinearSolve.LevenbergMarquardt),
-    ("NonlinearSolve-GaussNewton", NonlinearSolve.GaussNewton),
-    ("NonlinearSolve-PolyAlg", NonlinearSolve.FastShortcutNLLSPolyalg),
+    # NonlinearSolve.jl (short labels for the poster legend; dispatch matches the
+    # "NonlinearSolve-" prefix)
+    ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
+    ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),
 
     # JSOSolvers (Best: TRON)
     ("JSO-TRON", tron),
@@ -44,17 +41,26 @@ solvers = [
     ("Scipy-LeastSquares", nothing),
 
     # NLLSsolver (Best: LevenbergMarquardt)
-    ("NLLSsolver-levenbergmarquardt", NLLSsolver.levenbergmarquardt),
+    ("NLLSsolver-LM", NLLSsolver.levenbergmarquardt),
 
     #LsqFit: lets see how it goes
     ("LsqFit-LM", nothing),
+
+    # Quasi-Newton baselines (Optim.jl)
+    ("Optim-BFGS", nothing),
+    ("Optim-L-BFGS", nothing),
 ]
 
 # Run benchmark
 nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 400)
 
-# Convert to DataFrame
+# Convert to DataFrame and persist raw results so figures can be rebuilt without
+# rerunning the benchmark (see scripts/plot_results.jl). x_opt (a vector per row)
+# is dropped — CSV would stringify it and no downstream step needs it.
 df_nls = DataFrame(nls_results)
+results_dir = normpath(joinpath(@__DIR__, "..", "results"))
+mkpath(results_dir)
+CSV.write(joinpath(results_dir, "nlls_results.csv"), select(df_nls, Not(:x_opt)))
 
 include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
@@ -67,17 +73,12 @@ using Test
     # Check that our solvers perform reasonably well (success rate > 90% relative to best)
     # Note: These thresholds might need adjustment based on the specific problem set difficulty
     if !isempty(summary_nls)
-        qr_row = summary_nls[summary_nls.solver .== "LM-QR", :]
-        svd_row = summary_nls[summary_nls.solver .== "LM-SVD", :]
-
-        if !isempty(qr_row)
-            @test qr_row[1, :percentage_success] > 0.9
-        end
-        if !isempty(svd_row)
-            @test svd_row[1, :percentage_success] > 0.9
+        row = summary_nls[summary_nls.solver .== "This work", :]
+        if !isempty(row)
+            @test row[1, :percentage_success] > 0.9
         end
     end
 end
 
-fig_nls = build_performance_plots(df_nls_proc)
-save(joinpath(plots_dir(), "nlls_solver_performance.png"), fig_nls)
+# Figures are built separately from the saved CSV:
+#   julia --project=benchmark benchmark/scripts/plot_results.jl

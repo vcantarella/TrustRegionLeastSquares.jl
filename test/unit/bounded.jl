@@ -82,3 +82,25 @@ using nonlinearlstr
         @test x ≈ clamp.(target, lb, ub) atol = 1e-4   # projection of target onto box
     end
 end
+
+@testset "Reflective bounded solver — nonlinear, finite two-sided active bound" begin
+    # Rosenbrock as NLS: F = [10(x2 - x1^2), 1 - x1]. Unconstrained min is (1,1).
+    # With a finite two-sided box and x1 capped at 0.5, the constrained optimum is exactly
+    # (0.5, 0.25): the inner residual f1=0 forces x2 = x1^2, leaving 0.5(1-x1)^2 minimized
+    # by pushing x1 to its upper bound. So x1 sits ON the bound (active) and x2 is interior.
+    rosen(x) = [10.0 * (x[2] - x[1]^2), 1.0 - x[1]]
+    rosen_jac(x) = [(-20.0*x[1]) 10.0; -1.0 0.0]
+    lb = [-2.0, -2.0]
+    ub = [0.5, 2.0]
+    x, f, g, iter = nonlinearlstr.lm_trust_region_reflective(
+        rosen,
+        rosen_jac,
+        [-1.2, 1.0];
+        lb = lb,
+        ub = ub,
+        max_iter = 300,
+    )
+    @test all(lb .- 1e-8 .<= x .<= ub .+ 1e-8)     # feasible
+    @test x ≈ [0.5, 0.25] atol = 1e-4              # x1 on the active upper bound, x2 interior
+    @test x[1] ≈ ub[1] atol = 1e-5                 # the bound genuinely binds
+end

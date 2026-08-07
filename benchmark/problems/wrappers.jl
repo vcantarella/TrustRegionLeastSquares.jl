@@ -6,10 +6,32 @@ function create_cutest_functions(nlp)
     x0 = copy(nlp.meta.x0)
     bl = copy(nlp.meta.lvar)
     bu = copy(nlp.meta.uvar)
-    # For CUTEst NLLS problems with objtype="none", the residuals are the constraints
-    residual_func(x) = NLPModels.cons(nlp, x)
+    # For CUTEst NLLS problems with objtype="none", the residuals are the constraints and the
+    # residual Jacobian is the constraint Jacobian. Constraints are equalities c(x) = lcon, so
+    # the residual is F(x) = cons(x) - lcon (subtracting the RHS matters when it is nonzero;
+    # the Jacobian is unchanged since lcon is constant).
+    lcon = copy(nlp.meta.lcon)
+    residual_func(x) = NLPModels.cons(nlp, x) .- lcon
     jacobian_func(x) = Matrix(NLPModels.jac(nlp, x))
     n, m = size(jacobian_func(x0))
+
+    # In-place, fairness-correct wrappers (parallel to create_nls_functions): evaluate the
+    # residual via cons! and fill a dense Jacobian in place via the constraint coordinate
+    # API (structure computed once), so the in-place solvers (NonlinearSolve, LSO) can run
+    # CUTEst problems and every solver pays the same per-evaluation cost. Without these only
+    # the out-of-place solvers (TRF, Scipy, PRIMA, LsqFit) could use CUTEst problems.
+    residual_func!(r, x) = (NLPModels.cons!(nlp, x, r); r .-= lcon; r)
+    jac_rows, jac_cols = NLPModels.jac_structure(nlp)
+    jac_vals = zeros(eltype(x0), length(jac_rows))
+    function jacobian_func!(J, x)
+        NLPModels.jac_coord!(nlp, x, jac_vals)
+        fill!(J, 0)
+        @inbounds for k in eachindex(jac_rows)
+            J[jac_rows[k], jac_cols[k]] = jac_vals[k]
+        end
+        return J
+    end
+
     # Create objective as 0.5 * ||r||²
     obj_func(x) = 0.5 * dot(residual_func(x), residual_func(x))
     grad_func(x) = jacobian_func(x)' * residual_func(x)
@@ -29,6 +51,8 @@ function create_cutest_functions(nlp)
         initial_cost = obj_func(x0),
         residual_func = residual_func,
         jacobian_func = jacobian_func,
+        residual_func! = residual_func!,
+        jacobian_func! = jacobian_func!,
         obj_func = obj_func,
         grad_func = grad_func,
         hess_func = hess_func,

@@ -8,6 +8,7 @@ using Revise
 using Test
 using DataFrames, CSV, CairoMakie
 using LeastSquaresOptim
+using Optim
 using LinearAlgebra, Statistics
 using NLLSsolver
 using StaticArrays
