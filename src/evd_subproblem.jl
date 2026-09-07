@@ -71,6 +71,7 @@ function solve_subproblem(
     f::AbstractVector{T},
     radius::Real,
     cache::EVDSubproblemCache,
+    λ_old::Real = zero(T), # ponytail: accepted for interface parity, EVD path doesn't reuse λ yet
 ) where {T<:Real}
     F = cache.factorization
     Q = F.vectors

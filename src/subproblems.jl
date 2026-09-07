@@ -116,6 +116,7 @@ function solve_subproblem(
     f::AbstractVector{T},
     radius::Real,
     cache::QRSubproblemCache,
+    λ_old::Real = zero(T),
 ) where {St<:QRSolve,T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
@@ -141,9 +142,9 @@ function solve_subproblem(
         δ = δgn
     else
         if n ≥ m
-            λ, δ = find_λ_scaled(strategy, cache, radius, J, Dk, f, 200, 1e-6)
+            λ, δ = find_λ_scaled(strategy, cache, radius, J, Dk, f, λ_old, 200, 1e-6)
         else
-            λ, δ = find_λ_scaled_undetermined(strategy, cache, radius, J, Dk, f, 200, 1e-6)
+            λ, δ = find_λ_scaled_undetermined(strategy, cache, radius, J, Dk, f, λ_old, 200, 1e-6)
         end
     end
     return λ, δ
@@ -182,6 +183,7 @@ function solve_subproblem(
     f::AbstractVector{T},
     radius::Real,
     cache::QRSubproblemCache,
+    λ_old::Real = zero(T),
 ) where {St<:Union{SVDSolve,QRrecursiveSolve},T<:Real}
     F = cache.factorization
     Dk = cache.scaling_matrix
@@ -197,7 +199,7 @@ function solve_subproblem(
         δ = δgn
     else
         # PASS CACHE HERE
-        λ, δ = find_λ_scaled(strategy, cache, radius, J, Dk, f, 200, 1e-6)
+        λ, δ = find_λ_scaled(strategy, cache, radius, J, Dk, f, λ_old, 200, 1e-6)
     end
     return λ, δ
 end
@@ -230,10 +232,14 @@ This function solves for λ such that ‖D*p‖ = Δ where p solves:
 Uses Newton's method with safeguarding to find λ. The search is constrained
 between lower bound l₀ = 0 and upper bound u₀ = ‖D*(Jᵀf)‖/Δ.
 """
-function find_λ_scaled(strategy::QRSolve, cache, Δ, J, D, f, maxiters, θ = 1e-4)
+function find_λ_scaled(strategy::QRSolve, cache, Δ, J, D, f, λ_old, maxiters, θ = 1e-4)
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
-    λ₀ = max(1e-3*u₀, √(l₀*u₀))
+    if λ_old == 0.0
+        λ₀ = max(1e-3*u₀, √(l₀*u₀))
+    else
+        λ₀ = λ_old
+    end
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
@@ -297,12 +303,17 @@ function find_λ_scaled_undetermined(
     J,
     D,
     f,
+    λ_old,
     maxiters,
     θ = 1e-4,
 )
     l₀ = 0.0
     u₀ = norm((J'f) ./ diag(D))/Δ
-    λ₀ = max(1e-3*u₀, √(l₀*u₀))
+    if λ_old == 0.0
+        λ₀ = max(1e-3*u₀, √(l₀*u₀))
+    else
+        λ₀ = λ_old
+    end
     λ = λ₀
     uₖ = u₀
     lₖ = l₀
@@ -369,12 +380,15 @@ the SVD factorization to solve the regularized system.
 Uses Newton's method with safeguarding to find λ. The step computation
 uses the SVD factorization for numerical stability with ill-conditioned systems.
 """
-function find_λ_scaled(strategy::SVDSolve, cache, Δ, J, D, f, maxiters, θ = 1e-4)
+function find_λ_scaled(strategy::SVDSolve, cache, Δ, J, D, f, λ_old, maxiters, θ = 1e-4)
     F = cache.factorization
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
-    λ₀ = max(1e-3*u₀, √(l₀*u₀))
-    λ = λ₀
+    if λ_old == 0.0
+        λ = max(1e-3*u₀, √(l₀*u₀))
+    else
+        λ = λ_old
+    end
     uₖ = u₀
     lₖ = l₀
     p = cache.p
@@ -554,7 +568,17 @@ end
 
 Find the Lagrange multiplier λ for the scaled trust region subproblem using Recursive QR.
 """
-function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters, θ = 1e-4)
+function find_λ_scaled(
+    strategy::QRrecursiveSolve,
+    cache,
+    Δ,
+    J,
+    D,
+    f,
+    λ_old,
+    maxiters,
+    θ = 1e-4,
+)
     # Unpack buffers
     F = cache.factorization
     p = cache.p
@@ -575,7 +599,7 @@ function find_λ_scaled(strategy::QRrecursiveSolve, cache, Δ, J, D, f, maxiters
     l₀ = 0.0
     u₀ = norm(D*(J'f))/Δ
     λ₀ = max(1e-3*u₀, √(l₀*u₀))
-    λ = λ₀
+    λ = λ_old == 0.0 ? λ₀ : λ_old
     uₖ = u₀
     lₖ = l₀
 

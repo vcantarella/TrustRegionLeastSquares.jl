@@ -74,6 +74,7 @@ function lm_trust_region(
     Jδ = Vector{T}(undef, length(f))
     cost = 0.5 * dot(f, f)
     g = J' * f
+    λ_old = zero(T)
     cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
     if norm_overrides_initial_radius && norm(x0) > 1e-4
         initial_radius = norm(cache.scaling_matrix * x0)
@@ -87,7 +88,8 @@ function lm_trust_region(
     #iterations
     for iter = 1:max_iter
         # Compute step using QR-facorization
-        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
+        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache, λ_old)
+        λ_old = λ
         # Evaluate new point
         @. x_trial = x + δ
         f_new = res(x_trial)
@@ -191,6 +193,10 @@ Minimizes `0.5 * ||f(x)||^2`.
 - `gtol`: Gradient tolerance for convergence (`norm(g) < gtol`).
 - `ftol`: Function tolerance for convergence.
 - `norm_overrides_initial_radius`: If true, `initial_radius` is scaled by the norm of the first step.
+- `verbose`: Print per-iteration progress (default `false`; keep off when timing).
+- `callback`: Optional function invoked once per iteration with a NamedTuple
+  `(iter, x, x_trial, δ, λ, radius, ρ, accepted, cost)` for tracing/animation
+  (default `nothing`; `ρ = NaN` when the predicted reduction was non-positive).
 
 # Returns
 - `x`: Optimized parameters.
@@ -217,6 +223,8 @@ function lm_trust_region!(
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
     norm_overrides_initial_radius::Bool = true,
+    verbose::Bool = false,
+    callback = nothing,
 ) where {T}
 
     # Initialize
@@ -230,6 +238,7 @@ function lm_trust_region!(
     Jδ = Vector{T}(undef, length(f))
     cost = 0.5 * dot(f, f)
     g = J' * f
+    λ_old = 0.0
     cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
     if norm_overrides_initial_radius && norm(x0) > 1e-4
         initial_radius = norm(cache.scaling_matrix * x0)
@@ -237,13 +246,15 @@ function lm_trust_region!(
     radius = initial_radius
     # Check initial convergence
     if norm(g) < gtol
-        println("Initial guess satisfies gradient tolerance")
+        verbose && println("Initial guess satisfies gradient tolerance")
         return x, f, g, 0
     end
     #iterations
     for iter = 1:max_iter
         # Compute step using QR-facorization
-        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache)
+        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache, λ_old)
+        λ_old = λ
+        radius_used = radius # radius the step was computed with, for the callback
         # Evaluate new point
         @. x_trial = x + δ
         res!(f_new, x_trial)
@@ -255,7 +266,11 @@ function lm_trust_region!(
         #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
         predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
         if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
-            println("Non-positive predicted reduction, shrinking radius")
+            verbose && println("Non-positive predicted reduction, shrinking radius")
+            callback === nothing || callback((;
+                iter, x = copy(x), x_trial = copy(x_trial), δ = copy(δ),
+                λ, radius = radius_used, ρ = NaN, accepted = false, cost,
+            ))
             radius *= shrink_factor
             continue
         end
@@ -268,22 +283,29 @@ function lm_trust_region!(
             radius *= shrink_factor
         end
         # Accept or reject step
-        if ρ >= step_threshold
+        accepted = ρ >= step_threshold
+        # Invoked before x is overwritten so `x` is the step's origin, and before the
+        # convergence returns so the final step is still reported.
+        callback === nothing || callback((;
+            iter, x = copy(x), x_trial = copy(x_trial), δ = copy(δ),
+            λ, radius = radius_used, ρ, accepted, cost,
+        ))
+        if accepted
             @. x = x_trial
             @. f = f_new
             cost = cost_new
             jac!(J, x)
             mul!(g, J', f)
-            println(
+            verbose && println(
                 "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
             )
             # Check convergence
             if norm(g, 2) < gtol
-                println("Gradient convergence criterion reached")
+                verbose && println("Gradient convergence criterion reached")
                 return x, f, g, iter
             end
             if actual_reduction < ftol * max(cost, 1.0)
-                println("Function tolerance criterion reached")
+                verbose && println("Function tolerance criterion reached")
                 return x, f, g, iter
             end
             # update cache
@@ -294,14 +316,14 @@ function lm_trust_region!(
                 @warn "Optimized path NOT taken: J is $(typeof(J))"
             end
         else
-            println("Step rejected, ρ = $ρ")
+            verbose && println("Step rejected, ρ = $ρ")
         end
         # Check trust region size
         if radius < min_trust_radius
-            println("Trust region radius below minimum")
+            verbose && println("Trust region radius below minimum")
             return x, f, g, iter
         end
     end
-    println("Maximum number of iterations reached")
+    verbose && println("Maximum number of iterations reached")
     return x, f, g, max_iter
 end

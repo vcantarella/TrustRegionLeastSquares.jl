@@ -134,3 +134,48 @@ function create_nls_functions(prob)
         problem = prob.meta.name,
     )
 end
+
+"""
+    crop_nls_functions(pd, k; rows)
+
+Underdetermined variant of `pd` (a `create_*_functions` NamedTuple): keep only `k` of its
+residual rows and the matching Jacobian rows. Default rows are evenly spaced over `1:pd.n`
+so data-fitting problems keep their whole abscissa range and chained/banded problems keep
+every variable touched (the FIRST k rows would leave zero Jacobian columns). The cropped
+system has k equations in `pd.m > k` unknowns, so its solution set is generically an
+(m-k)-dimensional manifold on which the cost is exactly 0. Every solver pays the same extra
+row-copy per evaluation. Returns `pd` untouched when it already has at most `k` residuals
+(the natively underdetermined NLSProblems).
+"""
+# range(1, n, length = 1) throws, so a single kept row is row 1.
+function crop_nls_functions(
+    pd,
+    k;
+    rows = k == 1 ? [1] : round.(Int, range(1, pd.n, length = k)),
+)
+    pd.n <= k && return pd
+    rbuf = zeros(pd.n)
+    Jbuf = zeros(pd.n, pd.m)
+    residual_func(x) = pd.residual_func(x)[rows]
+    jacobian_func(x) = pd.jacobian_func(x)[rows, :]
+    residual_func!(r, x) = (pd.residual_func!(rbuf, x); r .= @view rbuf[rows]; r)
+    jacobian_func!(J, x) = (pd.jacobian_func!(Jbuf, x); J .= @view Jbuf[rows, :]; J)
+    obj_func(x) = 0.5 * sum(abs2, residual_func(x))
+    grad_func(x) = jacobian_func(x)' * residual_func(x)
+    hess_func(x) = (J = jacobian_func(x); J' * J)
+    return merge(
+        pd,
+        (;
+            n = length(rows),
+            initial_cost = obj_func(pd.x0),
+            residual_func,
+            jacobian_func,
+            residual_func!,
+            jacobian_func!,
+            obj_func,
+            grad_func,
+            hess_func,
+            problem = "$(pd.problem)_crop$(length(rows))",
+        ),
+    )
+end

@@ -77,7 +77,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 subproblem_strategy,
                 scaling_strategy;
                 max_iter = max_iter,
-                gtol = 1e-6,
+                gtol = 1e-8,
+                ftol = 1e-8,
             )
             #run one more time for timing:
 
@@ -90,13 +91,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     subproblem_strategy,
                     scaling_strategy;
                     max_iter = max_iter,
-                    gtol = 1e-6,
+                    gtol = 1e-8,
+                    ftol = 1e-8,
                 )
             ).time
 
             x_opt, r_opt, g_opt, iterations = result
             final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-6
+            converged = norm(g_opt, 2) < 1e-8
         elseif solver_name in ["TRF", "TRF-scaled"]
             scaling_strategy = nonlinearlstr.ColemanandLiScaling()
 
@@ -107,7 +109,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 lb = prob_data.bl,
                 ub = prob_data.bu,
                 max_iter = max_iter,
-                gtol = 1e-6,
+                gtol = 1e-8,
             )
             #run one more time for timing:
 
@@ -119,13 +121,13 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     lb = prob_data.bl,
                     ub = prob_data.bu,
                     max_iter = max_iter,
-                    gtol = 1e-6,
+                    gtol = 1e-8,
                 )
             ).time
 
             x_opt, r_opt, g_opt, iterations = result
             final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-6
+            converged = norm(g_opt, 2) < 1e-8
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"
@@ -135,12 +137,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     prob_data.obj_func,
                     prob_data.x0;
                     maxfun = max_iter*prob_data.m,
+                    rhoend = 1e-8,
                 )
                 t = minimum(
                     @be PRIMA.newuoa(
                         prob_data.obj_func,
                         prob_data.x0;
                         maxfun = max_iter*prob_data.m,
+                        rhoend = 1e-8,
                     )
                 ).time
             else
@@ -152,6 +156,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     xl = lb,
                     xu = ub,
                     maxfun = max_iter*prob_data.m,
+                    rhoend = 1e-8,
                 )
                 t = minimum(
                     @be PRIMA.bobyqa(
@@ -160,6 +165,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                         xl = lb,
                         xu = ub,
                         maxfun = max_iter*prob_data.m,
+                        rhoend = 1e-8,
                     )
                 ).time
             end
@@ -188,8 +194,16 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             else
                 prob_nl = NonlinearLeastSquaresProblem(nl_func, copy(prob_data.x0))
             end
-            sol = solve(prob_nl, solver_func(); maxiters = max_iter)
-            t = minimum(@be solve(prob_nl, solver_func(); maxiters = max_iter)).time
+            # Fairness: NonlinearSolve's default abstol for Float64 is 3e-13 on ‖F‖ —
+            # unreachable on nonzero-residual problems, so runs would only stop via the
+            # 32-step stall window or maxiters, inflating iteration counts and time
+            # relative to the 1e-8 tolerances given to the other solvers. abstol=1e-8
+            # matches the suite-wide value (see README "Benchmark limitations"); its
+            # stall detector then also fires at the 1e-8 step scale.
+            sol = solve(prob_nl, solver_func(); maxiters = max_iter, abstol = 1e-8)
+            t = minimum(
+                @be solve(prob_nl, solver_func(); maxiters = max_iter, abstol = 1e-8)
+            ).time
             x_opt = sol.u
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
@@ -208,14 +222,36 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             #     iterations = sol.stats.nsteps
             #     converged = SciMLBase.successful_retcode(sol)
         elseif contains(solver_name, "JSO-")
-            stats = solver_func(prob, max_iter = max_iter)
-            t = minimum(@be solver_func(prob, max_iter = max_iter)).time
+            # Fairness: TRON's defaults stop at atol + rtol*‖g₀‖ with atol=rtol=√eps — a
+            # per-problem-varying threshold — and cap wall-clock at max_time=30s, which no
+            # other solver has. atol=1e-8, rtol=0 matches the suite-wide 1e-8 absolute
+            # tolerance; max_time=Inf removes the hidden cap.
+            stats = solver_func(
+                prob;
+                max_iter = max_iter,
+                atol = 1e-8,
+                rtol = 0.0,
+                max_time = Inf,
+            )
+            t = minimum(
+                @be solver_func(
+                    prob;
+                    max_iter = max_iter,
+                    atol = 1e-8,
+                    rtol = 0.0,
+                    max_time = Inf,
+                )
+            ).time
             x_opt = stats.solution
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)
             iterations = stats.iter
             converged = stats.status == :first_order
         elseif contains(solver_name, "LSO-")
+            # Fairness: without explicit kwargs LSO runs its own defaults — 1000
+            # iterations, while everyone else gets max_iter. Pass the shared budget and
+            # the suite-wide 1e-8 gradient tolerance (its x_tol/f_tol already default
+            # to 1e-8, matching SciPy's xtol/ftol).
             res = LeastSquaresOptim.optimize!(
                 LeastSquaresProblem(
                     x = copy(prob_data.x0),
@@ -226,6 +262,9 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 solver_func,
                 lower = prob_data.bl,
                 upper = prob_data.bu,
+                iterations = max_iter,
+                g_tol = 1e-8,
+                x_tol = 0.0,
             )
             # Construct the LeastSquaresProblem in the Chairmarks SETUP phase (run per
             # sample but NOT timed) so we measure only the solve, matching the other
@@ -242,6 +281,9 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     solver_func,
                     lower = prob_data.bl,
                     upper = prob_data.bu,
+                    iterations = max_iter,
+                    g_tol = 1e-8,
+                    x_tol = 0.0,
                 )
             ).time
             x_opt = res.minimizer
@@ -255,8 +297,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 copy(prob_data.x0),
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
-                xtol = 1e-8,
-                gtol = 1e-6,
+                xtol = nothing,
+                gtol = 1e-8,
                 max_nfev = 1000,
                 verbose = 0,
             )
@@ -266,8 +308,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     copy(prob_data.x0),
                     jac = prob_data.jacobian_func,
                     bounds = (prob_data.bl, prob_data.bu),
-                    xtol = 1e-8,
-                    gtol = 1e-6,
+                    xtol = nothing,
+                    gtol = 1e-8,
                     max_nfev = 1000,
                     verbose = 0,
                 )
@@ -287,8 +329,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 jac = prob_data.jacobian_func,
                 bounds = (prob_data.bl, prob_data.bu),
                 tr_solver = "lsmr",
-                xtol = 1e-8,
-                gtol = 1e-6,
+                xtol = nothing,
+                gtol = 1e-8,
                 max_nfev = 1000,
                 verbose = 0,
             )
@@ -298,8 +340,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     copy(prob_data.x0),
                     jac = prob_data.jacobian_func,
                     bounds = (prob_data.bl, prob_data.bu),
-                    xtol = 1e-8,
-                    gtol = 1e-6,
+                    xtol = nothing,
+                    gtol = 1e-8,
                     max_nfev = 1000,
                     verbose = 0,
                 )
@@ -322,10 +364,14 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 NLLSsolver.addcost!(problem, res_obj)
                 return problem
             end
+            # Fairness: NLLSOptions defaults to maxtime=30s — a hidden wall-clock cap no
+            # other solver has. 1e6 s is effectively unlimited (maxtime is stored as
+            # UInt64 nanoseconds, so Inf would throw an InexactError).
             options = NLLSsolver.NLLSOptions(
-                reldcost = 1e-11,
+                reldcost = 1e-8,
                 iterator = solver_func,
                 maxiters = max_iter,
+                maxtime = 1e6,
             )
 
             problem = build_nlls_problem()
@@ -345,7 +391,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             # Quasi-Newton baselines on the scalar objective 0.5‖r‖² (Optim.jl).
             # Out-of-place obj/grad closures, hence inplace = false.
             method = solver_name == "Optim-BFGS" ? Optim.BFGS() : Optim.LBFGS()
-            optim_opts = Optim.Options(iterations = max_iter, g_tol = 1e-6)
+            optim_opts = Optim.Options(iterations = max_iter, g_tol = 1e-8)
             res = Optim.optimize(
                 prob_data.obj_func,
                 prob_data.grad_func,
@@ -397,7 +443,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 lower = prob_data.bl,
                 upper = prob_data.bu,
                 maxIter = max_iter,
-                g_tol = 1e-6,
+                g_tol = 1e-8,
+                x_tol = 0.0,
             )
 
             # Run again for timing
@@ -411,7 +458,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     lower = prob_data.bl,
                     upper = prob_data.bu,
                     maxIter = max_iter,
-                    g_tol = 1e-6,
+                    g_tol = 1e-8,
+                    x_tol = 0.0,
                 )
             ).time
 
@@ -452,7 +500,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             time = Inf,
             bounds_satisfied = false,
             final_gradient_norm = Inf,
-            x_opt = fill(NaN, prob_data.n),
+            x_opt = fill(NaN, prob_data.m),   # variable-length, like the success branch
         )
     end
 end

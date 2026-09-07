@@ -1,4 +1,4 @@
-function nlls_benchmark(problems, solvers; max_iter = 100)
+function nlls_benchmark(problems, solvers; max_iter = 100, transform = identity)
     """Run comprehensive elapsed on NLLS problems"""
     # Define solvers to test
     results = []
@@ -16,6 +16,10 @@ function nlls_benchmark(problems, solvers; max_iter = 100)
             nlp = eval(prob_name)()
             prob_data = create_nls_functions(nlp)
         end
+        # Canonical label is the symbol/SIF name, not meta.name (nls_rosenbrock reports "mgh01"
+        # and would collide). `transform` may rewrite the problem, e.g. crop_nls_functions,
+        # and extends the label accordingly.
+        prob_data = transform(merge(prob_data, (; problem = String(prob_name))))
         # Create Julia functions
         # Note: prob_data.n is the residual count, prob_data.m the variable count.
         println("  Variables: $(prob_data.m)")
@@ -39,9 +43,10 @@ function nlls_benchmark(problems, solvers; max_iter = 100)
             result_with_problem = merge(
                 result,
                 (
-                    problem = String(prob_name),
-                    nvars = prob_data.n,
-                    nresiduals = prob_data.m,
+                    problem = prob_data.problem,
+                    nvars = prob_data.m,
+                    nresiduals = prob_data.n,
+                    dist_x0 = norm(result.x_opt .- prob_data.x0),
                     initial_objective = initial_obj,
                     improvement = initial_obj - result.final_cost,
                 ),

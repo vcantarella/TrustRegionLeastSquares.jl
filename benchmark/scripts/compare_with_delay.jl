@@ -31,6 +31,12 @@ solvers = [
     # Scipy (Best: LeastSquares)
     ("Scipy-LeastSquares", nothing),
 
+    # NLLSsolver (Best: LevenbergMarquardt). The delay reaches it through the
+    # ProbDataResidual wrapper, whose computeresjacstatic calls the (delayed)
+    # prob_data.jacobian_func; its LM inner retries only re-evaluate the cheap
+    # residual, consistent with the other LM solvers.
+    ("NLLSsolver-LM", NLLSsolver.levenbergmarquardt),
+
     #LsqFit: lets see how it goes
     ("LsqFit-LM", nothing),
 

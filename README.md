@@ -31,7 +31,69 @@ Test problems come from **NLSProblems.jl** (via NLPModels.jl); CUTEst problems a
 
 - Every solver receives the **same analytic residual and Jacobian**, wrapped as in-place closures with buffers preallocated once, so no solver pays extra allocation or wrapper cost per evaluation.
 - Timing is the **minimum over repeated solves** (Chairmarks.jl), with problem construction excluded from the timed region.
-- A run counts as a **success** only if it reaches the best cost found by *any* solver on that problem (within 1e-4, absolute or relative) — converging to a worse local minimum does not count.
+- A run counts as a **success** only if it reaches the best cost found by *any* solver on that problem (within 1e-4, absolute or relative) — converging to a worse local minimum does not count. The success metric is therefore **cost-based** and independent of each package's self-reported convergence flag.
+
+### Termination criteria: one value, each solver's own criteria
+
+Solver packages implement different stopping *criteria*, so they cannot be forced onto
+one identical rule. Instead, **every tolerance a solver exposes is set to 1e-8**, and
+each solver terminates through whatever criteria it natively implements at that value:
+
+| Criterion class | Who tests it (all at 1e-8) |
+|---|---|
+| First-order (gradient) | This work (`‖J'r‖₂`), SciPy `gtol` (∞-norm, scaled), Optim `g_tol` (∞-norm), LsqFit `g_tol`, TRON `atol` (projected gradient, `rtol=0`), LSO `g_tol` (∞-norm) |
+| Step size | **Disabled** where it is a single-step give-up test (SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`): one small step is the weakest evidence of optimality — it fires during slow crawls — and "this work" has no such test, so removing it keeps the criterion sets symmetric. Kept where structural: NonlinearSolve's stall detector (32 *consecutive* steps ≤ `abstol` — its only exit at nonzero residual) and PRIMA's `rhoend` (a DFO method's resolution parameter) |
+| Cost stagnation | This work `ftol`, SciPy `ftol`, LSO `f_tol`, NLLSsolver `reldcost` |
+| Residual norm | NonlinearSolve `abstol` (on `‖r‖₂`) |
+| Trust-region resolution | PRIMA `rhoend` (the x-resolution of a derivative-free method) |
+
+A caveat stated openly: tolerances on different quantities are *not* equally strict even
+at the same number — near a minimum, cost error scales as the square of parameter error,
+and gradient scales carry the Jacobian's magnitude. A single value does not remove that
+incommensurability; it removes the *choice* of per-class pairing as a degree of freedom.
+What makes the comparison robust is the success metric: a run counts as a success based
+on its achieved cost (within 1e-4 of the best found), which is orders of magnitude
+looser than any 1e-8 criterion, so reported success rates are insensitive to the exact
+tolerance value — the tolerances only decide when a solver stops polishing.
+
+Iteration budget: **`max_iter = 400`** for every iterative solver (passed explicitly,
+including to LSO whose own default is 1000). Hidden wall-clock caps are removed
+(TRON and NLLSsolver default to a 30 s `max_time`; the suite lifts both).
+
+### Known limitations (read before citing numbers)
+
+- **NonlinearSolve has no gradient-based stopping for NLLS.** Its API terminates on the
+  residual norm (`abstol`) plus a stalled-step detector (32 consecutive steps below
+  `abstol` → `StalledSuccess`, its documented "found a local minimum" exit). On the
+  **30/88 problems with nonzero residual at the solution**, no residual tolerance can
+  fire, so its exit there is the stall path — the same criterion *class* as this work's
+  trust-radius-collapse exit (`radius < 1e-8`), but it pays a ~32-iteration confirmation
+  tail that our immediate exit does not. This mismatch is inherent to its API; treat
+  small timing gaps against NonlinearSolve accordingly.
+- **NLLSsolver stops on cost decrease only** (`reldcost = 1e-8`); it exposes no gradient
+  criterion. Different class from everyone else, kept because it is what the package offers.
+- **PRIMA-NEWUOA is derivative-free** and budgeted as `maxfun = 400 × n_vars`
+  (one "iteration" ≈ one model rebuild). It stops at trust-region radius
+  `rhoend = 1e-8`. Shown for reference, not as a like-for-like competitor.
+- **SciPy is called from Julia via PythonCall**: every residual/Jacobian evaluation
+  crosses the Julia↔Python boundary, and SciPy's timings include that overhead. Its
+  budget is `max_nfev = 1000` *evaluations* (not 400 iterations — TRF uses ~1–3
+  evaluations per iteration, so the budgets are comparable but not identical units).
+- **Norm conventions differ**: this work tests `‖g‖₂ ≤ 1e-8` while SciPy/Optim/LSO test
+  ∞-norm variants. Since `‖g‖∞ ≤ ‖g‖₂`, competitors stop at or before our criterion —
+  the mismatch, where it matters, favors the competitors' timings.
+- **Iteration counts are not comparable across solvers** (LM iterations vs. SciPy
+  Jacobian evaluations vs. PRIMA function evaluations; LsqFit does not expose a count and
+  is recorded as 0). They appear in the CSVs for context and are never plotted.
+- **The delay benchmark (Figure 2) delays only Jacobian and gradient evaluations**
+  (200 ms); residual and objective evaluations stay cheap. This *flatters* line-search
+  methods (BFGS/L-BFGS), whose objective-only line-search evaluations would also be
+  expensive in a real simulator — their Figure 2 results are favorable upper bounds.
+- **Remaining wrapper asymmetries**: TRON consumes the NLPModels model directly rather
+  than the extracted closures (thin call-path difference); NLLSsolver's static-size
+  residual API requires a per-evaluation `collect`/`SVector` wrapper (overhead the others
+  don't pay — it is nonetheless the fastest solver on small problems); Optim's
+  quasi-Newton baselines run the scalar `0.5‖r‖²` formulation with out-of-place closures.
 
 ### Metrics
 
@@ -55,16 +117,16 @@ Both benchmark scripts accept `MAX_VARS` and `PROBLEM_LIMIT` environment variabl
 ### Standard benchmark: cheap evaluations
 
 ![NLLS solver performance](test_plots/nlls_solver_performance.png)
-*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set. "This work" and SciPy are the only solvers with a 100% success rate; "This work" is 2.1× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
+*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). "This work" and SciPy are the only solvers with a 100% success rate; "This work" is 2.7× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
 
-On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile. The proposed solver's per-iteration cost (careful factorizations, exact subproblem solves) buys something different: it converges on **every** problem, in a median of ~15 iterations.
+On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile. The proposed solver's per-iteration cost (careful factorizations, exact subproblem solves) buys something different: it converges on **every** problem, in a median of ~13 iterations.
 
 ### Real-world benchmark: expensive evaluations
 
 To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient J′r requires the Jacobian, so gradient-based solvers must pay it too).
 
 ![NLLS solver performance with expensive Jacobians](test_plots/nlls_solver_performance_delay.png)
-*Figure 2: Same experiment with 200 ms per Jacobian/gradient evaluation (colors and markers as in Figure 1). Evaluation count now dominates wall-clock: "This work" leads the profile, ties the SciPy baseline (1.0×) at 100% success, and every other solver falls behind — line-search quasi-Newton methods (BFGS/L-BFGS) drop to 0.2–0.4× because their line searches evaluate the gradient several times per iteration.*
+*Figure 2: Same experiment with 200 ms per Jacobian/gradient evaluation (same 88 problems; colors and markers as in Figure 1). Evaluation count now dominates wall-clock and the few-iteration LM methods cluster at the front: "This work" leads the profile and ties the SciPy baseline (1.0×) as the only pair at 100% success, with NLLSsolver effectively tied on speed (1.0×) at 98%. NonlinearSolve-LM pays its stall-confirmation tail (0.63×), and line-search quasi-Newton methods (BFGS/L-BFGS) drop to 0.22–0.25× because their line searches evaluate the gradient several times per iteration. LSO's 1.2× is computed over its own smaller successful set (88% of problems).*
 
 This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
 

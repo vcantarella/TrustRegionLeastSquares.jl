@@ -78,6 +78,7 @@ function lm_trust_region_v2!(
     Jδ = Vector{T}(undef, length(f))
     cost = 0.5 * dot(f, f)
     g = J' * f
+    λ_old = zero(T)
     cache = subproblem_cache_init(subproblem_strategy, scaling_strategy, J)
     if norm_overrides_initial_radius && norm(x0) > 1e-4
         initial_radius = norm(cache.scaling_matrix * x0)
@@ -91,7 +92,8 @@ function lm_trust_region_v2!(
     #iterations
     for iter = 1:max_iter
         # Compute step using QR-facorization
-        λ = solve_subproblem(J, f, radius, cache)
+        λ = solve_subproblem(J, f, radius, cache, λ_old)
+        λ_old = λ
         δ = cache.p # proposed step
         # Evaluate new point
         @. x_trial = x + δ

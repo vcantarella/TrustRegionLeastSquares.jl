@@ -10,7 +10,8 @@ function solve_subproblem(
     J::AbstractMatrix{T},
     f::AbstractVector{T},
     Δ::Real,
-    cache::QRCholCache;
+    cache::QRCholCache,
+    λ_old::Real;
     maxiters = 6,
     θ = 1e-4,
 ) where {T<:Real}
@@ -25,8 +26,11 @@ function solve_subproblem(
     else
         l₀ = 0.0
         u₀ = norm((J'f) ./ diag(D))/Δ
-        λ₀ = max(1e-3*u₀, √(l₀*u₀))
-        λ = λ₀
+        if λ_old == zero(T)
+            λ = max(1e-3*u₀, √(l₀*u₀))
+        else
+            λ = λ_old
+        end
         uₖ = u₀
         lₖ = l₀
         b_aug = cache.b_aug

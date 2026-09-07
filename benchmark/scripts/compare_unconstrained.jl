@@ -24,12 +24,15 @@ solvers = [
     ("This work", nonlinearlstr.lm_trust_region!),
 
     # PRIMA (Best: NEWUOA for unconstrained)
-    ("PRIMA-NEWUOA", nothing),
+    #("PRIMA-NEWUOA", nothing),
 
     # NonlinearSolve.jl (short labels for the poster legend; dispatch matches the
     # "NonlinearSolve-" prefix)
     ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),
+    ("NonlinearSolve-GNBK", () -> NonlinearSolve.GaussNewton(linesearch = BackTracking())),
+    ("NonlinearSolve-GNLF", () -> NonlinearSolve.GaussNewton(linesearch = LiFukushimaLineSearch())),
+    
 
     # JSOSolvers (Best: TRON)
     ("JSO-TRON", tron),

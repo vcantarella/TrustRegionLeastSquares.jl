@@ -7,16 +7,17 @@ include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
 results_dir = normpath(joinpath(@__DIR__, "..", "results"))
 
-for (csvname, figname, legend) in [
-    ("nlls_results.csv", "nlls_solver_performance", true),
-    ("nlls_results_delay.csv", "nlls_solver_performance_delay", false),
+for (csvname, figname, legend, atol) in [
+    ("nlls_results.csv", "nlls_solver_performance", true, 1e-4),
+    ("nlls_results_delay.csv", "nlls_solver_performance_delay", false, 1e-4),
+    ("nlls_results_underdetermined.csv", "nlls_solver_performance_underdetermined", true, 1e-12),
 ]
     path = joinpath(results_dir, csvname)
     if !isfile(path)
         println("skipping $figname: $path not found (run the benchmark script first)")
         continue
     end
-    df_proc = compare_with_best(CSV.read(path, DataFrame))
+    df_proc = compare_with_best(CSV.read(path, DataFrame); atol = atol)
     # White-background PNG for previewing (ink text is unreadable when a viewer shows
     # transparency as dark); transparent SVG for the poster.
     fig_png = build_performance_plots(df_proc; legend = legend, background = :white)

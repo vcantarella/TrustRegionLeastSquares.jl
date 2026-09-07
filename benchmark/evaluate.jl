@@ -22,7 +22,9 @@ function finite_min(v)
     return isempty(fin) ? Inf : minimum(fin)
 end
 
-function compare_with_best(df::DataFrame)
+# `atol`: absolute cost tolerance for "close to best". 1e-4 suits the overdetermined suite;
+# the underdetermined suite has a known optimum of 0 and uses 1e-12 (‖r‖ ≲ 1.4e-6).
+function compare_with_best(df::DataFrame; atol = 1e-4)
     # Use standard DataFrames - no macro BS
     df_proc = copy(df)
 
@@ -33,7 +35,7 @@ function compare_with_best(df::DataFrame)
 
     # Add comparison columns. A run is "close" to best in absolute OR relative terms; NaN
     # final costs compare false everywhere, so failed runs never count as successes.
-    df_proc.final_close = abs.(df_proc.final_cost .- df_proc.min_solution) .<= 1e-4
+    df_proc.final_close = abs.(df_proc.final_cost .- df_proc.min_solution) .<= atol
     df_proc.final_close_abs =
         abs.(df_proc.final_cost .- df_proc.min_solution) ./ abs.(df_proc.min_solution) .<
         1e-4
@@ -79,6 +81,7 @@ const SOLVER_ORDER = [
     "NLLSsolver-LM",
     "NonlinearSolve-LM",
     "NonlinearSolve-TR",
+    "NonlinearSolve-GNBK",
     "PRIMA-NEWUOA",
     "Scipy-LeastSquares",
 ]
@@ -92,6 +95,7 @@ const SOLVER_MARKERS = [
     :star5,
     :pentagon,
     :hexagon,
+    :circle,
     :ltriangle,
     :rtriangle,
 ]
@@ -109,6 +113,7 @@ const SOLVER_COLORS = [
     "#008300",  # green
     "#4a3aa7",  # violet
     "#e34948",  # red
+    :darkblue,
     "#14b8d4",  # cyan
     "#9c5410",  # brown
     "#a0a424",  # olive
