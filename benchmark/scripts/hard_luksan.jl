@@ -1,4 +1,6 @@
-# Hard exponential-fit problems A.1–A.6 from Luksan (1995), solved in their original and in a
+# Hard exponential-fit problems A.1-A.6 from [Luk96]: L. Lukšan, "Hybrid methods for large sparse
+# nonlinear least squares", Journal of Optimization Theory and Applications 89(3), 575-595 (1996),
+# doi:10.1007/BF02275350. Solved in their original and in a
 # log-parameterized form (x = exp(y), started from y0 = log(x0)).
 #   julia --project=benchmark benchmark/scripts/hard_luksan.jl
 include(joinpath(@__DIR__, "..", "harness.jl"))
@@ -7,7 +9,7 @@ using DataFrames, CSV, ForwardDiff, LinearAlgebra, Test
 using PRIMA, NonlinearSolve, LeastSquaresOptim
 import TrustRegionLeastSquares as TRLS
 
-# Hard Problems in Luksan, 1995
+# The six problems of [Luk96], Appendix A
 fa1(x, t) = x[1] + x[2]*exp(x[3]*t)
 ti1 = [1, 5, 10, 15, 20, 25, 30, 35, 40, 50]
 yi1 = [16.7, 26.8, 16.9, 17.1, 17.2, 17.4, 17.6, 17.9, 18.1, 18.7]

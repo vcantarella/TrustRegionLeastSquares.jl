@@ -11,7 +11,9 @@ DocMeta.setdocmeta!(
 # Add titles of sections and overrides page titles
 const titles = Dict(
     # "10-tutorials" => "Tutorials", # example folder title
+    "20-bibliography.md" => "Bibliography",
     "91-developer.md" => "Developer docs",
+    "95-reference.md" => "API reference",
 )
 
 function recursively_list_pages(folder; path_prefix = "")

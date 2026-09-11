@@ -75,7 +75,12 @@ x, f, g, iter = lm_trust_region!(
 
 ### Methodology
 
-**Trust region framework.** At each iteration the algorithm minimizes a model of the objective `F(x) = 0.5 * ||f(x)||^2` around the current point:
+This package is an implementation of published methods, not a new one. Chapters 4 and 10 of
+Nocedal & Wright [[NW06]](#references) supply the framework and most of the details; the sources
+for each part are named below and listed under [References](#references), and the source comments
+cite them by the same keys with section, algorithm or equation numbers.
+
+**Trust region framework** [[NW06]](#references) Algorithm 4.1. At each iteration the algorithm minimizes a model of the objective `F(x) = 0.5 * ||f(x)||^2` around the current point:
 ```math
 min_p  || J_k p + f_k ||^2  \quad \text{subject to} \quad || D_k p || \le \Delta_k
 ```
@@ -85,9 +90,11 @@ where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `�
 ```math
 (J_k^T J_k + \lambda D_k^T D_k) p = -J_k^T f_k
 ```
-for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `ψ(λ) = 1/Δ - 1/‖Dp(λ)‖`. The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
+for a Lagrange multiplier `λ ≥ 0` ([[NW06]](#references) Theorem 4.1), found by safeguarded Newton iteration on `φ₂(λ) = 1/Δ - 1/‖Dp(λ)‖` — a reformulation chosen because it is nearly linear in `λ` near the root, where `‖Dp(λ)‖ = Δ` is not ([[NW06]](#references) §4.3), with the bracket and safeguard of [[Mor78]](#references). The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
 
-**Bounds (Coleman–Li scaling, projected step).** The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. This is the Macconi–Morini–Porcelli (2009) safeguard, and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
+**Underdetermined problems** [[CJK26]](#references) Appendix B, [[SGJ26]](#references). With fewer residuals than parameters, `JᵀJ` is large and rank-deficient. The `LQStrategy` and `LQCholStrategy` variants instead solve the damped system through the small, full-rank `J Jᵀ`, which returns a regularized minimum-norm step, and use an LQ factorization so that the condition number is not squared.
+
+**Bounds** [[MMP09]](#references), with the affine scaling of [[CL96]](#references). The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. That is the generalized Cauchy step of [[MMP09]](#references) eq. (8) and its fraction-of-decrease condition (11), and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
 
 ## Benchmarks
 
@@ -182,7 +189,7 @@ including to LSO whose own default is 1000). Hidden wall-clock caps are removed
 
 ### Metrics
 
-Figures report **Dolan–Moré performance profiles** (Dolan & Moré, 2002): for each solver and problem, the performance ratio τ = time / best solver's time on that problem; the curve shows the fraction of all problems solved within τ. The height at τ = 1 reads as "how often is this solver the fastest", the right-hand asymptote as robustness. The summary table gives the success rate and the cumulative-time speed-up relative to the SciPy baseline.
+Figures report **Dolan–Moré performance profiles** [[DM02]](#references): for each solver and problem, the performance ratio τ = time / best solver's time on that problem; the curve shows the fraction of all problems solved within τ. The height at τ = 1 reads as "how often is this solver the fastest", the right-hand asymptote as robustness. The summary table gives the success rate and the cumulative-time speed-up relative to the SciPy baseline.
 
 ### Running it
 
@@ -307,6 +314,56 @@ Three things to read carefully before citing the low rows:
 The two internal variants in the table (`LM-QR-scaled`, `LM-QRChol`) are there to show that the
 choice of factorization strategy barely matters on this set: all three sit within 1.4 points of each
 other. `internal_variants.jl` compares all eight strategy-and-scaling combinations properly.
+
+## References
+
+The solver implements published methods. Source comments cite these by key with a section,
+algorithm or equation number; `docs/src/20-bibliography.md` says which part of the code came from
+which result.
+
+<a id="references"></a>
+
+- **[NW06]** J. Nocedal and S. J. Wright, *Numerical Optimization*, 2nd ed., Springer (2006).
+  [doi:10.1007/978-0-387-40065-5](https://doi.org/10.1007/978-0-387-40065-5) — the trust-region
+  iteration (Algorithm 4.1), the characterization of the subproblem solution (Theorem 4.1), the
+  Cauchy point (Algorithm 4.2), the λ-iteration on `φ₂(λ) = 1/Δ - 1/‖p(λ)‖` (§4.3), and
+  Gauss–Newton and Levenberg–Marquardt with the augmented-matrix implementation (§10.3). Most of
+  this package comes from these two chapters.
+- **[Mor78]** J. J. Moré, "The Levenberg–Marquardt algorithm: implementation and theory", in
+  *Numerical Analysis*, G. A. Watson (ed.), Lecture Notes in Mathematics 630, Springer (1978),
+  pp. 105–116. [doi:10.1007/BFb0067700](https://doi.org/10.1007/BFb0067700) — the λ bracket and
+  safeguard, the non-decreasing diagonal scaling, and the radius update, as in MINPACK's `lmder`
+  and `lmpar`.
+- **[CJK26]** M. Chen, S. G. Johnson and A. Karalis, "Inverse design of multiresonance filters via
+  quasi-normal mode theory", *Optics Express* **34**(4), 5729–5752 (2026).
+  [doi:10.1364/OE.579219](https://doi.org/10.1364/OE.579219) ·
+  [arXiv:2504.10219](https://arxiv.org/abs/2504.10219) — Appendix B, "Underdetermined
+  Levenberg–Marquardt algorithm", which the `LQStrategy` and `LQCholStrategy` variants implement.
+- **[SGJ26]** S. G. Johnson, reply in ["Should NonlinearLeastSquaresProblem be used for deep
+  learning?"](https://discourse.julialang.org/t/should-nonlinearleastsquaresproblem-be-used-for-deep-learning/135793/4),
+  Julia Discourse, 23 February 2026 — the post that prompted the LQ strategies and points at
+  [CJK26].
+- **[MMP09]** M. Macconi, B. Morini and M. Porcelli, "A Gauss–Newton method for solving
+  bound-constrained underdetermined nonlinear systems", *Optimization Methods and Software*
+  **24**(2), 219–235 (2009).
+  [doi:10.1080/10556780902753031](https://doi.org/10.1080/10556780902753031) — the generalized
+  Cauchy step (eq. 8) and the fraction-of-decrease condition (11) used for box constraints.
+- **[CL96]** T. F. Coleman and Y. Li, "An interior trust region approach for nonlinear minimization
+  subject to bounds", *SIAM Journal on Optimization* **6**(2), 418–445 (1996).
+  [doi:10.1137/0806023](https://doi.org/10.1137/0806023) — the affine scaling `v(x)`. Only the
+  scaling is taken from here: iterates in this solver may rest on a bound.
+- **[MGH81]** J. J. Moré, B. S. Garbow and K. E. Hillstrom, "Testing unconstrained optimization
+  software", *ACM Transactions on Mathematical Software* **7**(1), 17–41 (1981).
+  [doi:10.1145/355934.355936](https://doi.org/10.1145/355934.355936) — the test problems and
+  reference objective values the unit tests assert against.
+- **[DM02]** E. D. Dolan and J. J. Moré, "Benchmarking optimization software with performance
+  profiles", *Mathematical Programming* **91**(2), 201–213 (2002).
+  [doi:10.1007/s101070100263](https://doi.org/10.1007/s101070100263) — the performance profiles in
+  the figures above.
+- **[Luk96]** L. Lukšan, "Hybrid methods for large sparse nonlinear least squares", *Journal of
+  Optimization Theory and Applications* **89**(3), 575–595 (1996).
+  [doi:10.1007/BF02275350](https://doi.org/10.1007/BF02275350) — the six hard exponential-fit
+  problems in `hard_luksan.jl`.
 
 ## Status
 

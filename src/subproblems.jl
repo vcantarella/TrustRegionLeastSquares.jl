@@ -1,8 +1,13 @@
 # Trust-region subproblem   min ‖J p + f‖²  s.t.  ‖D p‖ ≤ Δ.
 #
-# If the Gauss–Newton step fits, λ = 0. Otherwise (JᵀJ + λD²) p = -Jᵀf with the λ that puts
-# ‖Dp‖ on the boundary, found by Hebden/Moré safeguarded Newton on ψ(λ) = 1/Δ − 1/‖Dp(λ)‖
-# (MINPACK lmpar). Each strategy differs only in how the damped system is factorized.
+# [NW06] Theorem 4.1: a step solves this iff (JᵀJ + λD²) p = -Jᵀf for some λ ≥ 0 with
+# λ(Δ - ‖Dp‖) = 0. So if the Gauss–Newton step already fits, λ = 0; otherwise λ is the root of
+# ‖Dp(λ)‖ = Δ, found by safeguarded Newton on the near-linear φ₂(λ) = 1/Δ - 1/‖Dp(λ)‖ of
+# [NW06] §4.3, with the bracket and the initial guess of [Mor78] (MINPACK lmpar).
+#
+# Each strategy differs only in how the damped system is factorized: the QR strategies follow the
+# augmented-matrix implementation of [NW06] §10.3, and the LQ strategies solve through J Jᵀ for
+# underdetermined problems, following [CJK26] Appendix B and [SGJ26].
 
 """
     solve_subproblem(J, f, Δ, cache, λ_old; maxiters = 10, θ = 1e-4) -> λ
@@ -15,15 +20,17 @@ iterations; the cap of 10 (as in MINPACK `lmpar`) is what an ill-conditioned Jac
 """
 function solve_subproblem end
 
-# Moré's bracket: λ* ∈ (0, u₀] with u₀ = ‖D⁻¹Jᵀf‖/Δ, since ‖Dp(λ)‖ ≤ ‖D⁻¹Jᵀf‖/λ.
+# Moré's bracket ([Mor78], MINPACK lmpar): λ* ∈ (0, u₀] with u₀ = ‖D⁻¹Jᵀf‖/Δ, since
+# ‖Dp(λ)‖ ≤ ‖D⁻¹Jᵀf‖/λ.
 initial_λ(λ_old, u₀) = (iszero(λ_old) ? 1e-3 * u₀ : min(λ_old, u₀), zero(u₀), u₀)
 
 """
     newton_update_λ(λ, ϕ, Δ, pᵀD²p, pᵀD²q, l, u) -> (λ, l, u)
 
-One safeguarded Newton step on `ψ(λ) = 1/Δ − 1/‖Dp‖`, where `ϕ = ‖Dp‖ − Δ` and
-`pᵀD²q = pᵀD²(JᵀJ + λD²)⁻¹D²p = −‖Dp‖ dϕ/dλ`. `[l, u]` brackets the root and is tightened
-on the way (Moré 1978, MINPACK `lmpar`).
+One safeguarded Newton step on `φ₂(λ) = 1/Δ − 1/‖Dp‖`, the reformulation of `‖Dp(λ)‖ = Δ` that is
+nearly linear in λ near the root and so suits Newton's method ([NW06] §4.3). Here
+`ϕ = ‖Dp‖ − Δ` and `pᵀD²q = pᵀD²(JᵀJ + λD²)⁻¹D²p = −‖Dp‖ dϕ/dλ`. `[l, u]` brackets the root and
+is tightened on the way, which is the safeguard of [Mor78] (MINPACK `lmpar`).
 """
 function newton_update_λ(λ, ϕ, Δ, pᵀD²p, pᵀD²q, l, u)
     ϕ < 0 ? (u = λ) : (l = λ)
@@ -42,7 +49,8 @@ end
 """
     gauss_newton_min_norm!(p, F, y, f)
 
-Minimum-norm solution of `J p = -f` for a wide `J`, given `F = qr(Jᵀ, ColumnNorm())`, i.e.
+Minimum-norm solution of `J p = -f` for a wide `J`, given `F = qr(Jᵀ, ColumnNorm())` — the LQ
+factorization of [CJK26] Appendix B, which keeps the condition number unsquared. That is,
 `J = P Rᵀ Qᵀ`: solve `Rᵀ y = -Pᵀf`, then `p = Q [y; 0]`. When `R` is rank-deficient the leading
 `r` rows of `R` get a second QR (complete orthogonal decomposition), which keeps `p` minimum-norm.
 `y` is a rows-length workspace.
@@ -132,7 +140,9 @@ function solve_subproblem(J, f, Δ, cache::QRCache, λ_old; maxiters = 10, θ = 
     return λ_of_p
 end
 
-# Wide J: substitute p = D⁻² Jᵀ z, so that (JᵀJ + λD²) p = -Jᵀf  ⇔  (J D⁻² Jᵀ + λI) z = -f  (rows × rows).
+# Wide J ([CJK26] Appendix B, [SGJ26]): substitute p = D⁻² Jᵀ z, so that the damped system becomes
+# (JᵀJ + λD²) p = -Jᵀf  ⇔  (J D⁻² Jᵀ + λI) z = -f, which is rows × rows rather than cols × cols and
+# full rank even when J is not. The step it returns is the regularized minimum-norm one.
 # Then ‖Dp‖² = zᵀ J D⁻² Jᵀ z and pᵀD²(JᵀJ + λD²)⁻¹D²p = zᵀz − λ zᵀ(J D⁻² Jᵀ + λI)⁻¹z.
 function solve_subproblem(J, f, Δ, cache::LQCache, λ_old; maxiters = 10, θ = 1e-4)
     D, p, Dp, z, q = cache.scaling_matrix, cache.p, cache.Dp, cache.z, cache.q

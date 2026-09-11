@@ -1,4 +1,4 @@
-# Bound constraints  lb ≤ x ≤ ub  (Macconi, Morini, Porcelli 2009, with Coleman–Li affine scaling):
+# Bound constraints  lb ≤ x ≤ ub, following [MMP09] with the affine scaling of [CL96]:
 # the trust-region step is computed in the scaled norm ‖D_s |v|^{-1/2} p‖ ≤ Δ, so that a variable
 # close to the bound its gradient points at can barely move towards it; the step is then projected
 # onto the box and made to achieve at least a fraction β₁ of the decrease of a generalized Cauchy
@@ -43,7 +43,7 @@ end
 """
     coleman_li_distances!(v, x, g, lb, ub)
 
-`|v_i|` of Coleman & Li (1996): the distance from `x_i` to the bound the negative gradient points
+`|v_i|` of [CL96], eq. (1.4): the distance from `x_i` to the bound the negative gradient points
 at, or `1` when that bound is infinite. Zero on an active bound with the gradient pushing outwards.
 """
 function coleman_li_distances!(v, x, g, lb, ub)
@@ -72,7 +72,8 @@ end
 """
     cauchy_step!(cache, J, g, x, Δ, lb, ub) -> decrease
 
-Generalized Cauchy step `pC = ω d` (MMP 2009, eq. 8) along the scaled steepest descent
+Generalized Cauchy step `pC = ω d` ([MMP09] eq. 8; the unconstrained form is Algorithm 4.2 of
+[NW06]) along the scaled steepest descent
 `d = -|v| ⊙ g`, with `ω` the smallest of the model minimiser along `d`, the trust-region boundary
 (in the scaled norm of the inner solver) and the ray–box intersection. Writes `pC` into `cache.pC`
 and returns `m(0) − m(pC) = ω gᵀDg − ½ ω² ‖Jd‖²`, where `gᵀDg = -gᵀd`. Expects the trust-region
@@ -100,7 +101,7 @@ end
 
 Trust-region step in the Coleman–Li scaled norm `D = D_s |v|^{-1/2}`, projected onto the box,
 `p̄ = P(x + p) − x`, and safeguarded by the Cauchy step: if `m(0) − m(p̄) < β₁ (m(0) − m(pC))`
-(MMP 2009, condition 11) the step is moved along `p(t) = p̄ + t (pC − p̄)` to the first `t` where
+([MMP09] condition 11) the step is moved along `p(t) = p̄ + t (pC − p̄)` to the first `t` where
 the condition holds with equality. The step is written into `cache.p`; `x + p` stays in the box.
 `‖Dp‖` is its length in the scaled norm.
 """

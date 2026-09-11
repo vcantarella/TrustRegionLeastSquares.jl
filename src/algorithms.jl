@@ -16,8 +16,8 @@ projected_gradient_norm(g, x, lb, ub) = sqrt(
     trust_region_step!(cache::SolverCache, J, f, g, Δ, λ_old, x, lb, ub) -> (λ, predicted_reduction, ‖Dp‖)
 
 Unconstrained trust-region step into `cache.p`. The predicted reduction is `½‖Jp‖² + λ‖Dp‖²`,
-the MINPACK form: it equals `-gᵀp − ½‖Jp‖²` at a solution of `(JᵀJ + λD²) p = -Jᵀf` but is
-free of that expression's cancellation for ill-conditioned `J`. The scaled step length `‖Dp‖`
+the MINPACK form of [Mor78]: it equals `-gᵀp − ½‖Jp‖²` at a solution of `(JᵀJ + λD²) p = -Jᵀf`
+([NW06] Theorem 4.1) but is free of that expression's cancellation for ill-conditioned `J`. The scaled step length `‖Dp‖`
 drives the radius update.
 """
 function trust_region_step!(cache::SolverCache, J, f, g, Δ, λ_old, x, lb, ub)
@@ -32,7 +32,8 @@ end
                      strategy = QRCholStrategy(), scaling = NoScaling();
                      lb = -Inf, ub = Inf, kwargs...) -> (x, f, g, iter)
 
-Minimize `½‖f(x)‖²` subject to `lb ≤ x ≤ ub` with a Levenberg–Marquardt trust-region method.
+Minimize `½‖f(x)‖²` subject to `lb ≤ x ≤ ub` with a Levenberg–Marquardt trust-region method
+([NW06] Algorithm 4.1 and §10.3; see the module docstring for the reference keys).
 
 `res!(f, x)` writes the `output_length` residuals into `f`; `jac!(J, x)` writes the Jacobian into
 the `output_length × length(x)` matrix `J`. Each iteration solves
@@ -42,7 +43,7 @@ factorization ([`QRCholStrategy`](@ref), [`QRStrategy`](@ref), [`LQStrategy`](@r
 [`JacobianScaling`](@ref)).
 
 With finite bounds the step is projected onto the box and safeguarded by a generalized Cauchy
-step (Macconi–Morini–Porcelli 2009, see [`trust_region_step!`](@ref)); `x0` is clamped into
+step ([MMP09], see [`trust_region_step!`](@ref)); `x0` is clamped into
 the box, every iterate stays feasible and may sit on a bound, and convergence is measured by
 the projected gradient `‖x − P(x − g)‖`.
 
@@ -53,7 +54,8 @@ the projected gradient `‖x − P(x − g)‖`.
 - `max_trust_radius = 1e12`, `min_trust_radius = 1e-8`: Δ bounds; the solver stops when Δ shrinks below the minimum.
 - `step_threshold = 0.001`: accept the step when the ratio ρ of actual to predicted reduction exceeds this.
 - `shrink_threshold = 0.25`, `shrink_factor = 0.25`: when ρ < shrink_threshold,
-  Δ ← shrink_factor·min(Δ, 10‖Dp‖) (MINPACK `lmder`: the radius follows the step that was tried).
+  Δ ← shrink_factor·min(Δ, 10‖Dp‖) — the radius follows the step that was tried, as in [Mor78]
+  (MINPACK `lmder`), rather than the previous radius.
 - `expand_threshold = 0.75`, `expand_factor = 2.0`: when ρ ≥ expand_threshold or the step was
   a full Gauss–Newton step (λ = 0), Δ ← expand_factor·‖Dp‖ — twice the step just taken, which
   equals expand_factor·Δ for a step on the boundary.
@@ -170,7 +172,7 @@ function trust_region_loop!(
         cost_trial = dot(f_trial, f_trial) / 2
         actual_reduction = cost - cost_trial
         ρ = predicted_reduction > 0 ? actual_reduction / predicted_reduction : -one(T)
-        if ρ < shrink_threshold                           # MINPACK lmder radius rules
+        if ρ < shrink_threshold                           # radius rules of [Mor78], MINPACK lmder
             radius = shrink_factor * min(radius, 10 * step_norm)
         elseif ρ >= expand_threshold || iszero(λ)
             radius = min(max_trust_radius, expand_factor * step_norm)

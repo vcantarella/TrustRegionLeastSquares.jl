@@ -15,7 +15,8 @@ struct QRCholStrategy <: Strategy end
     QRStrategy()
 
 Gauss–Newton step from a column-pivoted QR of `J`; damped steps from a QR of the augmented
-matrix `[J; √λ D]` (Moré 1978). Numerically stable for any `cond(J)`. This is the variant the
+matrix `[J; √λ D]` — the implementation of [NW06] §10.3 and [Mor78]. Numerically stable for any
+`cond(J)`, since `J` is never squared. This is the variant the
 benchmarks report as `TRLS`.
 """
 struct QRStrategy <: Strategy end
@@ -23,9 +24,11 @@ struct QRStrategy <: Strategy end
 """
     LQStrategy()
 
-For underdetermined problems (rows ≤ cols). The Gauss–Newton step is the minimum-norm solution,
-from a column-pivoted QR of `Jᵀ` (complete orthogonal decomposition when rank-deficient);
-damped steps from a QR of `[D⁻¹Jᵀ; √λ I]`.
+For underdetermined problems (rows ≤ cols), following [CJK26] Appendix B and [SGJ26]: the damped
+system is solved through the small, full-rank `J D⁻² Jᵀ` rather than `JᵀJ`, and the LQ
+factorization keeps the condition number unsquared. The Gauss–Newton step is the minimum-norm
+solution, from a column-pivoted QR of `Jᵀ` (a complete orthogonal decomposition when
+rank-deficient); damped steps from a QR of `[D⁻¹Jᵀ; √λ I]`.
 """
 struct LQStrategy <: Strategy end
 
