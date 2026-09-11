@@ -11,9 +11,10 @@ box constraints, underdetermined problems and badly scaled variables. Pure Julia
 It is built for the case where **evaluating the model is the expensive part** — the residual is an
 ODE solve, a PDE solve, a simulation — so the solver spends effort per iteration (exact trust-region
 subproblem solves, careful factorizations) to keep the number of Jacobian evaluations down. On the
-88-problem NLSProblems set it solves every problem, in a median of around a dozen iterations, and
-when each Jacobian costs 200 ms it leads the field. On microsecond-scale toy problems, lighter
-wrappers are faster per problem; that trade is deliberate and is documented in the benchmarks below.
+88-problem NLSProblems set it solves every problem, at a median of 12.5 iterations, and it is the
+only solver besides SciPy to do so — in 0.28 s of cumulative solve time against SciPy's 1.33 s. On
+microsecond-scale toy problems, lighter wrappers are faster per problem; that trade is deliberate
+and is documented in the benchmarks below.
 
 - **Unconstrained and box-constrained** least squares through one entry point.
 - **Four factorization strategies**, including minimum-norm steps for underdetermined problems.
@@ -96,12 +97,13 @@ for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `
 |---|---|---|
 | TRLS | `TrustRegionLeastSquares.jl` v0.1 | LM trust region, `QRStrategy` |
 | NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.30 | TrustRegion, LevenbergMarquardt |
+| NonlinearSolve-GNBK / -GNLF | NonlinearSolve.jl v4.30 | GaussNewton with backtracking and with Li–Fukushima line search |
 | JSO-TRON | JSOSolvers.jl v0.14 | TRON |
 | LSO-Levenberg-QR | LeastSquaresOptim.jl v0.8 | Levenberg–Marquardt (QR) |
 | LsqFit-LM | LsqFit.jl v0.16 | Levenberg–Marquardt |
 | NLLSsolver-LM | NLLSsolver.jl v4.1 | Levenberg–Marquardt |
 | Optim-BFGS / -L-BFGS | Optim.jl v2.3 | quasi-Newton on 0.5‖r‖² |
-| PRIMA-NEWUOA | PRIMA.jl v0.2 | NEWUOA (derivative-free, shown for reference) |
+| PRIMA-NEWUOA | PRIMA.jl v0.2 | NEWUOA (derivative-free; bounded and hard-problem runs only) |
 | Scipy-LeastSquares | SciPy 1.18 (Python 3.13, via PythonCall) | `least_squares` (TRF) — the **baseline** |
 
 Test problems come from **NLSProblems.jl** v0.5 (via NLPModels.jl); CUTEst problems are supported by the same harness. Measured on Julia 1.12, macOS aarch64; exact package versions are pinned in `benchmark/Manifest.toml`.
@@ -200,9 +202,24 @@ Both benchmark scripts accept `MAX_VARS` and `PROBLEM_LIMIT` environment variabl
 #### Standard benchmark: cheap evaluations
 
 ![NLLS solver performance](docs/src/assets/benchmarks/nlls_solver_performance.png)
-*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). "TRLS" and SciPy are the only solvers with a 100% success rate; "TRLS" is 2.7× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
+*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). TRLS and SciPy are the only solvers that reach a 100% success rate, and TRLS gets there in 0.283 s of cumulative solve time against SciPy's 1.335 s. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
 
-On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile. The proposed solver's per-iteration cost (careful factorizations, exact subproblem solves) buys something different: it converges on **every** problem, in a median of ~13 iterations.
+| Solver | Success % | Median iterations | Cumulative time |
+|---|---|---|---|
+| **TRLS** | **100.0** | 12.5 | 0.283 s |
+| Scipy-LeastSquares | **100.0** | 13.0 | 1.335 s |
+| NLLSsolver-LM | 97.7 | 13.5 | 0.034 s |
+| NonlinearSolve-TR | 94.3 | 33.0 | 0.110 s |
+| NonlinearSolve-LM | 94.3 | 39.0 | 0.171 s |
+| JSO-TRON | 93.2 | 16.0 | 0.117 s |
+| NonlinearSolve-GNBK | 90.9 | 16.0 | 0.312 s |
+| Optim-L-BFGS | 90.9 | 33.0 | 0.219 s |
+| Optim-BFGS | 89.8 | 32.0 | 0.133 s |
+| NonlinearSolve-GNLF | 87.5 | 15.0 | 0.189 s |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 0.127 s |
+| LsqFit-LM | 84.1 | not exposed | 1.470 s |
+
+On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile: NLLSsolver solves its 97.7% roughly eight times faster in total than TRLS solves its 100%. What the extra per-iteration cost (exact subproblem solves, careful factorizations) buys is the last few problems, at a median of 12.5 iterations.
 
 #### Real-world benchmark: expensive evaluations
 

@@ -117,6 +117,28 @@ Also: labels changed from "This work" to `TRLS`, and `LM-LQChol` rows produced b
 actually produced by `LQStrategy` (the dispatch chain tested `"LQ"` first), so pre-2026-09-11 LQChol
 columns in any CSV are mislabelled LQ columns.
 
+Main figure (88 unconstrained NLSProblems, Julia 1.12, macOS aarch64):
+
+| Solver | Success % | Median iters (succ) | Total time (succ) |
+|---|---|---|---|
+| TRLS | **100.0** | 12.5 | 0.283 s |
+| Scipy-LeastSquares | **100.0** | 13.0 | 1.335 s |
+| NLLSsolver-LM | 97.7 | 13.5 | 0.034 s |
+| NonlinearSolve-TR | 94.3 | 33.0 | 0.110 s |
+| NonlinearSolve-LM | 94.3 | 39.0 | 0.171 s |
+| JSO-TRON | 93.2 | 16.0 | 0.117 s |
+| NonlinearSolve-GNBK | 90.9 | 16.0 | 0.312 s |
+| Optim-L-BFGS | 90.9 | 33.0 | 0.219 s |
+| Optim-BFGS | 89.8 | 32.0 | 0.133 s |
+| NonlinearSolve-GNLF | 87.5 | 15.0 | 0.189 s |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 0.127 s |
+| LsqFit-LM | 84.1 | n/a (not exposed) | 1.470 s |
+
+Against the 2026-08-08 run: success rates and median iterations are unchanged (100.0 / 12.5), and
+cumulative solve time fell from 0.495 s to 0.283 s, so the margin over SciPy went from 2.7x to 4.7x.
+The factorization-buffer reuse in the λ-iteration is the likely cause; competitors moved by less than
+a percentage point, as expected for untouched code.
+
 ### Historical: 2026-08-08 run
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
