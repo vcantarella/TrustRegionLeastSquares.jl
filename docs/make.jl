@@ -5,7 +5,7 @@ DocMeta.setdocmeta!(nonlinearlstr, :DocTestSetup, :(using nonlinearlstr); recurs
 
 makedocs(;
     modules = [nonlinearlstr],
-    authors = "Your Name <your.email@example.com> and contributors",
+    authors = "vcantarella and contributors",
     sitename = "nonlinearlstr.jl",
     format = Documenter.HTML(;
         canonical = "https://vcantarella.github.io/nonlinearlstr",

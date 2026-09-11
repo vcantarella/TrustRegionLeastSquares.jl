@@ -133,58 +133,51 @@ This is the regime the solver is designed for: **fewer steps beat cheaper steps*
 ### Bound-constrained problems (IN PROGRESS)
 
 ![Bounded solver performance](test_plots/bounded_solver_performance.png)
-*Figure 3: Performance profile on bound-constrained NLLS problems (Trust Region Reflective implementation).*
+*Figure 3: Performance profile on bound-constrained NLLS problems.*
 
 ## The proposed solver
 
-- **Unconstrained NLLS**: Levenberg–Marquardt style trust region algorithm.
-- **Bounded NLLS**: Trust Region Reflective algorithm using Coleman–Li scaling.
-- **Robust subproblem solvers**: recursive QR (fast, default), column-pivoted QR (stable), SVD (maximum robustness for ill-conditioned Jacobians).
-- **Allocation-free hot paths** with aggressive buffer reuse.
+- **Unconstrained NLLS**: Levenberg–Marquardt trust-region method, `min ‖J p + f‖` subject to `‖D p‖ ≤ Δ`, with the damping parameter found by safeguarded Newton iteration (Moré 1978).
+- **Bounded NLLS**: the trust-region step in the Coleman–Li affine-scaled norm, projected onto the box and safeguarded by a generalized Cauchy step (Macconi, Morini & Porcelli 2009). Iterates stay feasible and may rest on a bound; no active-set management.
+- **Four factorization strategies**: `QRCholStrategy` (pivoted QR for the Gauss–Newton step, Cholesky of `JᵀJ + λD²` for damped steps; the default), `QRStrategy` (QR of the augmented `[J; √λ D]`, stable at any conditioning), and `LQStrategy` / `LQCholStrategy` for underdetermined problems, which return the minimum-norm step via a complete orthogonal decomposition.
+- **Buffer reuse in the hot loop**: one factorization of `J` per iteration, reused across candidate `λ` values.
 
 ### Usage
 
-```julia
-using nonlinearlstr, LinearAlgebra
-
-# 1. Define residual function (f: R^n -> R^m)
-function rosenbrock_res(x)
-    return [10.0 * (x[2] - x[1]^2), 1.0 - x[1]]
-end
-
-# 2. Define Jacobian function (J: R^n -> R^{m x n})
-function rosenbrock_jac(x)
-    return [-20.0 * x[1] 10.0; -1.0 0.0]
-end
-
-# 3. Solve
-x0 = [-1.2, 1.0]
-x_opt, f_opt, g_opt, iter = nonlinearlstr.lm_trust_region(
-    rosenbrock_res,
-    rosenbrock_jac,
-    x0,
-    nonlinearlstr.QRrecursiveSolve() # subproblem strategy (optional)
-)
-
-println("Solution: ", x_opt)
-```
-
-For box constraints (`lb <= x <= ub`), use `lm_trust_region_reflective`:
+The residual and Jacobian are **in-place**: `res!(f, x)` fills the residual vector, `jac!(J, x)` the Jacobian. The fourth argument is the number of residuals.
 
 ```julia
-lb = [-2.0, -2.0]
-ub = [0.5, 0.5] # forces the solution away from the global minimum (1,1)
+using nonlinearlstr
 
-x_opt_bounded, _, _, _ = nonlinearlstr.lm_trust_region_reflective(
-    rosenbrock_res,
-    rosenbrock_jac,
-    x0;
-    lb = lb,
-    ub = ub
-)
+# Rosenbrock as a least-squares problem: f = [10(x₂ - x₁²), 1 - x₁]
+rosenbrock!(f, x) = (f[1] = 10 * (x[2] - x[1]^2); f[2] = 1 - x[1]; f)
+rosenbrock_jac!(J, x) = (J[1, 1] = -20 * x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
 
-println("Bounded Solution: ", x_opt_bounded)
+x, f, g, iter = lm_trust_region!(rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2)
+# x ≈ [1.0, 1.0]
 ```
+
+A different factorization strategy and variable scaling are positional arguments:
+
+```julia
+x, f, g, iter = lm_trust_region!(
+    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2,
+    nonlinearlstr.QRStrategy(),        # subproblem strategy (default: QRCholStrategy())
+    nonlinearlstr.JacobianScaling(),   # variable scaling   (default: NoScaling())
+)
+```
+
+For box constraints, pass `lb` and `ub`. Here the upper bound on `x₁` moves the solution to `(0.5, 0.25)`, where `x₁` rests on its bound:
+
+```julia
+x, f, g, iter = lm_trust_region!(
+    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2;
+    lb = [-2.0, -2.0], ub = [0.5, 2.0],
+)
+# x ≈ [0.5, 0.25]
+```
+
+`lm_trust_region!` returns the solution, the residuals and gradient there, and the iteration count. See its docstring for the trust-region and tolerance keywords.
 
 ### Methodology
 
@@ -198,9 +191,9 @@ where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `�
 ```math
 (J_k^T J_k + \lambda D_k^T D_k) p = -J_k^T f_k
 ```
-for a Lagrange multiplier `λ ≥ 0`, found by Newton's method. The factorization (QR or SVD) of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
+for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `ψ(λ) = 1/Δ - 1/‖Dp(λ)‖`. The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
 
-**Bounds (Coleman–Li).** The Trust Region Reflective method uses the Coleman–Li scaling matrix, which incorporates distance to the bounds so descent directions steer away from bounds as they are approached — iterates stay strictly feasible without active-set management.
+**Bounds (Coleman–Li scaling, projected step).** The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. This is the Macconi–Morini–Porcelli (2009) safeguard, and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
 
 ## Installation
 

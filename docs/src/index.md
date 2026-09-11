@@ -15,28 +15,26 @@ Pkg.add(url="https://github.com/vcantarella/nonlinearlstr")
 
 ## Quick Start
 
+The residual and Jacobian are in-place; the fourth argument is the number of residuals.
+
 ```julia
 using nonlinearlstr
 
-# Define your residual function and Jacobian
-function residual(x)
-    return [x[1]^2 + x[2]^2 - 1, x[1] - x[2]]
-end
+residual!(f, x) = (f[1] = x[1]^2 + x[2]^2 - 1; f[2] = x[1] - x[2]; f)
+jacobian!(J, x) = (J[1, 1] = 2x[1]; J[1, 2] = 2x[2]; J[2, 1] = 1; J[2, 2] = -1; J)
 
-function jacobian(x) 
-    return [2*x[1] 2*x[2]; 1 -1]
-end
+x, f, g, iter = lm_trust_region!(residual!, jacobian!, [0.5, 0.5], 2)
+```
 
-# Initial guess
-x0 = [0.5, 0.5]
+Box constraints are keyword arguments:
 
-# Solve using trust region method
-result = lm_trust_region(residual, jacobian, x0)
+```julia
+x, f, g, iter = lm_trust_region!(residual!, jacobian!, [0.5, 0.5], 2; lb = [0.0, 0.0], ub = [0.6, 1.0])
 ```
 
 ## Features
 
-- Trust region methods with QR and SVD factorization strategies
-- Scaling strategies for better conditioning
-- Bounded optimization support
-- Comprehensive testing and benchmarking
+- Levenberg–Marquardt trust-region method with exact subproblem solves
+- Four factorization strategies, including minimum-norm steps for underdetermined problems
+- Moré's diagonal scaling for badly scaled variables
+- Bound constraints via Coleman–Li scaling with a projected, Cauchy-safeguarded step

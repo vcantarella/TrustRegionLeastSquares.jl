@@ -1,139 +1,109 @@
-mutable struct QRSubproblemCache{S<:SubProblemStrategy,F,D,T,M} <: AbstractSubproblemCache
-    factorization::F
-    scaling_matrix::D
+abstract type Strategy end
 
-    # --- Buffers ---
-    J_buffer::M
+"""
+    QRCholStrategy()
 
-    p::Vector{T}             # Step direction 
-    p_newton::Vector{T}      # Gradient dp/dλ
-    dpdλ::Vector{T}
-    z::Vector{T}
-    dzdλ::Vector{T}
-    R_buffer::Matrix{T}      # n x n mutable R
-    rhs_buffer::Vector{T}    # n mutable RHS
-    qtf_buffer::Vector{T}    # Stores Q'f
-    v_row::Vector{T}         # Row workspace
-    perm_buffer::Vector{T}   # Buffer for permutation operations
+Gauss–Newton step from a column-pivoted QR of `J`; damped steps `(JᵀJ + λD²) p = -Jᵀf` from a
+Cholesky factorization of the normal matrix. Cheapest per λ-iteration, but the normal matrix squares
+`cond(J)`, so accuracy degrades from about `cond(J) = 1e8` and beyond roughly `1e12` the matrix —
+positive definite in exact arithmetic — is numerically indefinite and `cholesky!` throws a
+`PosDefException`. Prefer [`QRStrategy`](@ref) for ill-conditioned problems. The default.
+"""
+struct QRCholStrategy <: Strategy end
 
-    function QRSubproblemCache(
-        strategy::S,
-        scaling_strat::Sc,
-        J::AbstractMatrix{T};
-        kwargs...,
-    ) where {S<:SubProblemStrategy,Sc<:ScalingStrategy,T}
+"""
+    QRStrategy()
 
-        n, m = size(J)
-        F = factorize(strategy, J)
-        Dk = scaling(scaling_strat, J; kwargs)
+Gauss–Newton step from a column-pivoted QR of `J`; damped steps from a QR of the augmented
+matrix `[J; √λ D]` (Moré 1978). Numerically stable for any `cond(J)`. This is the variant
+labelled "This work" in the benchmarks.
+"""
+struct QRStrategy <: Strategy end
 
-        if J isa StridedMatrix{T}
-            if strategy isa QRSolve
-                if n ≥ m
-                    J_buffer = similar(J)
-                else
-                    J_buffer = similar(J') # Transposed shape for underdetermined!
-                end
-            else
-                J_buffer = similar(J)
-            end
-        else
-            J_buffer = nothing
-        end
+"""
+    LQStrategy()
 
-        p = zeros(T, m)
-        p_newton = zeros(T, m)
-        dpdλ = zeros(T, m)
-        z = zeros(T, n)
-        dzdλ = zeros(T, n)
-        R_buffer = zeros(T, m, m)
-        rhs_buffer = zeros(T, max(m, n))
-        qtf_buffer = zeros(T, max(m, n))
-        v_row = zeros(T, m)
-        perm_buffer = zeros(T, m)
+For underdetermined problems (rows ≤ cols). The Gauss–Newton step is the minimum-norm solution,
+from a column-pivoted QR of `Jᵀ` (complete orthogonal decomposition when rank-deficient);
+damped steps from a QR of `[D⁻¹Jᵀ; √λ I]`.
+"""
+struct LQStrategy <: Strategy end
 
-        new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(
-            F,
-            Dk,
-            J_buffer,
-            p,
-            p_newton,
-            dpdλ,
-            z,
-            dzdλ,
-            R_buffer,
-            rhs_buffer,
-            qtf_buffer,
-            v_row,
-            perm_buffer,
-        )
-    end
+"""
+    LQCholStrategy()
+
+As [`LQStrategy`](@ref), with damped steps from a Cholesky factorization of the rows × rows
+matrix `J D⁻² Jᵀ + λI`.
+"""
+struct LQCholStrategy <: Strategy end
+
+abstract type SolverCache end
+
+"""
+    QRCache(strategy, scaling, J)
+
+Workspace for `QRStrategy` / `QRCholStrategy`: the pivoted QR of `J` (refreshed in place on every
+accepted step), the scaling matrix `D`, and the step `p` with its products.
+"""
+mutable struct QRCache{S<:Strategy,F,T} <: SolverCache
+    factorization::F                         # qr(J, ColumnNorm())
+    scaling_matrix::Diagonal{T,Vector{T}}    # D
+    p::Vector{T}                             # step (cols)
+    Dp::Vector{T}
+    q::Vector{T}                             # workspace for dϕ/dλ (cols)
+    Jp::Vector{T}                            # (rows)
+end
+function QRCache(::S, scaling::ScalingStrategy, J::AbstractMatrix{T}) where {S<:Strategy,T}
+    n, m = size(J)
+    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
+    F = qr!(Matrix(J), ColumnNorm())
+    return QRCache{S,typeof(F),T}(F, D, zeros(T, m), zeros(T, m), zeros(T, m), zeros(T, n))
 end
 
+"""
+    LQCache(strategy, scaling, J)
 
-mutable struct EVDSubproblemCache{S<:EVDSolve,F,D,T,M} <: AbstractSubproblemCache
-    factorization::F
-    scaling_matrix::D
-
-    # --- Buffers ---
-    J_buffer::M
-
-    p::Vector{T}             # Step direction 
-    p_newton::Vector{T}      # Gradient dp/dλ
-    z::Vector{T}             # intermediate vector when system is undetermined.
-
-    function EVDSubproblemCache(
-        strategy::S,
-        scaling_strat::Sc,
-        J::AbstractMatrix{T};
-        kwargs...,
-    ) where {S<:EVDSolve,Sc<:ScalingStrategy,T}
-
-        n, m = size(J)
-        F = factorize(strategy, J)
-        Dk = scaling(scaling_strat, J; kwargs)
-
-        if J isa StridedMatrix{T}
-            if n ≥ m
-                J_buffer = similar(J'*J)
-            else # m < n
-                J_buffer = similar(J*J')
-            end
-        else
-            J_buffer = nothing
-        end
-
-        p = zeros(T, m)
-        p_newton = zeros(T, m)
-        z = zeros(T, n)
-
-
-        new{S,typeof(F),typeof(Dk),T,typeof(J_buffer)}(F, Dk, J_buffer, p, p_newton, z)
-    end
+Workspace for `LQStrategy` / `LQCholStrategy` (rows ≤ cols): the pivoted QR of `Jᵀ`, so that
+`J = P Rᵀ Qᵀ`, plus the row-length vectors `z`, `q` of the damped system.
+"""
+mutable struct LQCache{S<:Strategy,F,T} <: SolverCache
+    factorization::F                         # qr(Jᵀ, ColumnNorm())
+    scaling_matrix::Diagonal{T,Vector{T}}    # D
+    p::Vector{T}                             # step (cols)
+    Dp::Vector{T}
+    z::Vector{T}                             # (J D⁻² Jᵀ + λI) z = -f  (rows)
+    q::Vector{T}                             # workspace for dϕ/dλ (rows)
+    Jp::Vector{T}                            # (rows)
+end
+function LQCache(::S, scaling::ScalingStrategy, J::AbstractMatrix{T}) where {S<:Strategy,T}
+    n, m = size(J)
+    n <= m || throw(ArgumentError("$S needs rows ≤ cols, got $(size(J))"))
+    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
+    F = qr!(Matrix(J'), ColumnNorm())
+    return LQCache{S,typeof(F),T}(
+        F,
+        D,
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, n),
+        zeros(T, n),
+        zeros(T, n),
+    )
 end
 
-# Defining the end point for the functions
-SubproblemCache(
-    subproblem_strategy::QRrecursiveSolve,
-    scaling_strategy::ScalingStrategy,
-    J::AbstractMatrix,
-) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
+subproblem_cache_init(s::Union{QRStrategy,QRCholStrategy}, scaling, J) =
+    QRCache(s, scaling, J)
+subproblem_cache_init(s::Union{LQStrategy,LQCholStrategy}, scaling, J) =
+    LQCache(s, scaling, J)
 
-SubproblemCache(
-    subproblem_strategy::QRSolve,
-    scaling_strategy::ScalingStrategy,
-    J::AbstractMatrix,
-) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
-
-SubproblemCache(
-    subproblem_strategy::SVDSolve,
-    scaling_strategy::ScalingStrategy,
-    J::AbstractMatrix,
-) = QRSubproblemCache(subproblem_strategy, scaling_strategy, J)
-
-# Map the EVD strategy to its specialized cache
-SubproblemCache(
-    subproblem_strategy::EVDSolve,
-    scaling_strategy::ScalingStrategy,
-    J::AbstractMatrix,
-) = EVDSubproblemCache(subproblem_strategy, scaling_strategy, J)
+"Refactorize the new Jacobian into the cached buffer and update the scaling matrix."
+function update_cache!(cache::QRCache, J, scaling)
+    copyto!(cache.factorization.factors, J)
+    cache.factorization = qr!(cache.factorization.factors, ColumnNorm())
+    scaling!(cache.scaling_matrix, scaling, J)
+end
+function update_cache!(cache::LQCache, J, scaling)
+    copyto!(cache.factorization.factors, J')
+    cache.factorization = qr!(cache.factorization.factors, ColumnNorm())
+    scaling!(cache.scaling_matrix, scaling, J)
+end

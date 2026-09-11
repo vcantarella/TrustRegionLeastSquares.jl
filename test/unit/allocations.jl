@@ -1,61 +1,66 @@
-using Test
-using Chairmarks
-using LinearAlgebra
-using nonlinearlstr
+using Test, Chairmarks, LinearAlgebra, Random
+isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
 
-# Allocation regression guard for the steady-state subproblem path. We measure with
-# Chairmarks (already a test dep) rather than AllocCheck to keep the unit environment
-# light and portable. This is a GROSS regression tripwire, not a zero-alloc claim: the
-# subproblem solve inherently allocates a factorization (observed baselines on a 20x10
-# problem: solve_subproblem ~23-102 KB, find_λ_scaled ~19-52 KB, strategy-dependent).
-# The ceiling is set well above those baselines so it only fires on a large regression
-# (e.g. a per-iteration dense temporary reintroduced in the hot loop), not on
-# BLAS/version noise.
-const ALLOC_CEIL = 250_000  # bytes
+# Gross-regression tripwire, not a zero-allocation claim: the λ-iteration deliberately builds
+# small temporaries for readability, and every LAPACK Q product allocates its workspace. The
+# ceilings are ~3× the numbers measured on Julia 1.12 / macOS; they only fire on something like a
+# dense per-iteration matrix copy sneaking into the hot loop.
+# Roughly 3x the values measured on Julia 1.12 / macOS aarch64 (worst case: 170 KB for a
+# subproblem solve, 54 KB per solver iteration). Most of that floor is LAPACK's own workspace:
+# every Q product or pivoted-QR solve allocates ~50 KB that no amount of buffer reuse removes.
+const SUBPROBLEM_CEIL = 500_000     # bytes, one solve_subproblem call
+const ITERATION_CEIL = 160_000      # bytes per iteration of lm_trust_region!
 
-function _alloc_problem()
-    n, m = 10, 20
-    f = zeros(m)
-    f[1:n] .= 0.5
-    J = zeros(m, n)
-    J[1:n, 1:n] .= I(n)
-    return f, J, 1.0
-end
-
-const ALLOC_STRATEGIES = [
-    (nonlinearlstr.QRSolve(), nonlinearlstr.NoScaling(), "LM-QR"),
-    (nonlinearlstr.SVDSolve(), nonlinearlstr.NoScaling(), "LM-SVD"),
-    (nonlinearlstr.QRrecursiveSolve(), nonlinearlstr.NoScaling(), "LM-QR-Recursive"),
-]
-
-@testset "solve_subproblem allocations" begin
-    f, J, radius = _alloc_problem()
-    for (strat, scaling, name) in ALLOC_STRATEGIES
-        cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-        allocs =
-            minimum(@be nonlinearlstr.solve_subproblem($strat, $J, $f, $radius, $cache)).bytes
-        println("  $name solve_subproblem: $allocs bytes")
-        @test allocs <= ALLOC_CEIL
+@testset "allocations: solve_subproblem" begin
+    Random.seed!(1)
+    for (n, m) in ((20, 10), (10, 20)), strategy in STRATEGIES
+        wide_only(strategy) && n > m && continue
+        J, f = randn(n, m), randn(n)
+        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+        p_gn_norm = norm(pinv(J) * f)
+        for (path, Δ) in (("Gauss-Newton", 2 * p_gn_norm), ("boundary", 0.5 * p_gn_norm))
+            bytes = minimum(@be NL.solve_subproblem($J, $f, $Δ, $cache, 0.0)).bytes
+            println("  $(label(strategy)) $(n)×$(m) $path: $bytes bytes")
+            @test bytes <= SUBPROBLEM_CEIL
+        end
     end
 end
 
-@testset "find_λ_scaled allocations" begin
-    f, J, radius = _alloc_problem()
-    for (strat, scaling, name) in ALLOC_STRATEGIES
-        cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-        allocs = minimum(
-            @be nonlinearlstr.find_λ_scaled(
-                $strat,
-                $cache,
-                $radius,
-                $J,
-                $cache.scaling_matrix,
-                $f,
-                200,
-                1e-6,
+@testset "allocations per iteration of lm_trust_region!" begin
+    rosen!(f, x) = (f[1] = 10(x[2] - x[1]^2); f[2] = 1 - x[1]; f)
+    rosen_jac!(J, x) = (J[1, 1] = -20x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
+    # gtol = ftol = min_trust_radius = 0 disables every early exit, so the solver runs exactly max_iter iterations.
+    run(strategy, k) = NL.lm_trust_region!(
+        rosen!,
+        rosen_jac!,
+        [-1.2, 1.0],
+        2,
+        strategy;
+        max_iter = k,
+        gtol = 0.0,
+        ftol = 0.0,
+        min_trust_radius = 0.0,
+    )
+    for strategy in STRATEGIES, bounded in (false, true)
+        kw = bounded ? (lb = [-2.0, -2.0], ub = [0.5, 2.0]) : (;)
+        bytes(k) = minimum(
+            @be NL.lm_trust_region!(
+                rosen!,
+                rosen_jac!,
+                [-1.2, 1.0],
+                2,
+                $strategy;
+                max_iter = $k,
+                gtol = 0.0,
+                ftol = 0.0,
+                min_trust_radius = 0.0,
+                $kw...,
             )
         ).bytes
-        println("  $name find_λ_scaled: $allocs bytes")
-        @test allocs <= ALLOC_CEIL
+        per_iteration = (bytes(12) - bytes(2)) / 10
+        println(
+            "  $(label(strategy))$(bounded ? " bounded" : ""): $(round(Int, per_iteration)) bytes/iteration",
+        )
+        @test per_iteration <= ITERATION_CEIL
     end
 end

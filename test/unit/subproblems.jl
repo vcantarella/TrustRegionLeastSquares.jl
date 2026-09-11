@@ -1,273 +1,141 @@
-using Test
-using LinearAlgebra
-using Statistics
-using Random
-using ForwardDiff
-using nonlinearlstr
+using Test, LinearAlgebra, Random
+isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
 
-@testset "Unconstrained Subproblem Tests" begin
+# Backward-error measure for the normal equations (JᵀJ + λD²) p = -Jᵀf of the returned (λ, p).
+normal_equation_error(J, f, D, λ, p) =
+    norm((J'J + λ * D^2) * p + J'f) / (opnorm(J)^2 * norm(p) + norm(J'f))
+on_boundary(Dp_norm, Δ; θ = 1e-4) = (1 - θ) * Δ <= Dp_norm <= (1 + θ) * Δ
 
-    # Setup test data - used across all test sets
-    Random.seed!(123)  # For reproducible tests
-    m, n = 10, 4
-    J = randn(m, n)
-    f_true = randn(n)
-    p_true = randn(n)
-    f = -J * p_true + 0.1 * randn(m)  # Add some noise
-    λ = 0.8
+@testset "subproblem algebra: $(label(strategy)) / $(label(scaling))" for strategy in
+                                                                          STRATEGIES,
+    scaling in SCALINGS
 
-    # Helper function for reference solution
-    function get_p(J, f, λ)
-        n = size(J, 2)
-        J_aug = [J; sqrt(λ) * I(n)]
-        b = [-f; zeros(n)]
-        return J_aug \ b
+    Random.seed!(7)
+    for (n, m) in ((12, 5), (5, 12))
+        wide_only(strategy) && n > m && continue
+        J = randn(n, m)
+        J[:, 1] .*= 1e3                                   # badly scaled column: D ≠ I under JacobianScaling
+        f = randn(n)
+        cache = NL.subproblem_cache_init(strategy, scaling, J)
+        D = cache.scaling_matrix
+        if scaling isa NL.JacobianScaling
+            @test D.diag ≈ [norm(J[:, i]) for i = 1:m]
+        else
+            @test D == I
+        end
+        p_gn = -pinv(J) * f                               # least-squares (tall) or minimum-norm (wide) solution
+        # Gauss–Newton step inside the region: λ = 0 and p is the pseudo-inverse solution
+        λ = NL.solve_subproblem(J, f, 2 * norm(D * p_gn), cache, 0.0)
+        @test λ == 0
+        @test cache.p ≈ p_gn rtol = 1e-10
+        # Step on the boundary: ‖Dp‖ = Δ within θ and the normal equations hold for the returned λ
+        Δ = 0.5 * norm(D * p_gn)
+        λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+        @test λ > 0
+        @test on_boundary(norm(D * cache.p), Δ)
+        @test normal_equation_error(J, f, D, λ, cache.p) < 1e-12
+        # Warm start from the converged λ reproduces the step
+        p_boundary = copy(cache.p)
+        @test NL.solve_subproblem(J, f, Δ, cache, λ) ≈ λ
+        @test cache.p ≈ p_boundary
     end
+end
 
-    p_ref = get_p(J, f, λ)
-    size_p = norm(p_ref)
+@testset "JacobianScaling: Moré's non-decreasing column norms" begin
+    Random.seed!(2)
+    J = randn(8, 3)
+    D = NL.scaling!(Diagonal(zeros(3)), NL.JacobianScaling(), J)
+    column_norms = copy(D.diag)
+    NL.scaling!(D, NL.JacobianScaling(), 0.1 * J)
+    @test D.diag == column_norms                          # smaller norms leave D unchanged
+    NL.scaling!(D, NL.JacobianScaling(), 10 * J)
+    @test D.diag ≈ 10 * column_norms
+    J[:, 2] .= 0
+    @test NL.scaling!(Diagonal(zeros(3)), NL.JacobianScaling(), J).diag[2] == 1   # zero column → 1
+    @test NL.scaling!(D, NL.NoScaling(), J) == I
+end
 
-    @testset "Cache Construction" begin
-        @testset "QR Cache" begin
-            strat = nonlinearlstr.QRSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            @test cache.scaling_matrix == I(n)
-            @test typeof(cache.factorization) <:
-                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY,LinearAlgebra.QRPivoted}
-        end
-
-        @testset "SVD Cache" begin
-            strat = nonlinearlstr.SVDSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            @test cache.scaling_matrix == I(n)
-            @test typeof(cache.factorization) <: LinearAlgebra.SVD
-        end
-
-        @testset "QRrecursive Cache" begin
-            strat = nonlinearlstr.QRrecursiveSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            @test cache.scaling_matrix == I(n)
-            @test typeof(cache.factorization) <:
-                  Union{LinearAlgebra.QR,LinearAlgebra.QRCompactWY,LinearAlgebra.QRPivoted}
-        end
-
-        @testset "EVD Cache" begin
-            strat = nonlinearlstr.EVDSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            @test cache.scaling_matrix == I(n)
-            @test typeof(cache.factorization) <: LinearAlgebra.Eigen
-        end
-    end
-
-    @testset "Low-level Solving Functions" begin
-        @testset "SVD Augmented System Solver" begin
-            strat = nonlinearlstr.SVDSolve()
-            svdls = svd(J)
-            p_svd = nonlinearlstr.solve_augmented(strat, svdls, J, Diagonal(ones(n)), -f, λ)
-
-            @test p_svd ≈ p_ref rtol=1e-10
-        end
-
-        @testset "Derivative dp/dλ - QR Method" begin
-            strat = nonlinearlstr.QRSolve()
-            J_aug = [J; sqrt(λ) * I(n)]
-            qrf = qr(J_aug)
-            Dk = I(n)
-            dp_dλ = zeros(size(p_ref))
-
-
-            # Analytical derivative
-            nonlinearlstr.solve_for_dp_dlambda_scaled!(strat, dp_dλ, qrf, p_ref, Dk)
-
-            # Finite difference reference
-            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
-
-            @test dp_dλ ≈ dp_dλ_fd atol=1e-6
-        end
-
-        @testset "Derivative dp/dλ - SVD Method" begin
-            strat = nonlinearlstr.SVDSolve()
-            F = svd(J)
-            Dk = I(n)
-
-            # Analytical derivative
-            dp_dλ_svd = nonlinearlstr.solve_for_dp_dlambda_scaled(strat, F, Dk, λ, -f)
-
-            # Finite difference reference
-            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
-
-            @test dp_dλ_svd ≈ dp_dλ_fd atol=1e-6
-        end
-
-        @testset "Derivative dp/dλ - QRrecursive Method" begin
-            strat = nonlinearlstr.QRrecursiveSolve()
-            F = qr(J, ColumnNorm())
-            Dk = I(n)
-            # 1. Extract Permutation and Caches
-            perm = hasproperty(F, :p) ? F.p : (1:n)
-
-            p = zeros(n)
-            R_buffer = copy(F.R)
-            # Precompute Q' * f. 
-            # The RHS for the system R*y = ... is -Q'*f
-            QTr_orig = F.Q' * f
-            rhs_orig = -QTr_orig
-            rhs_buffer = copy(rhs_orig)
-            perm_buffer = copy(p)
-            dpdλ = copy(p)
-
-            # We need a workspace vector for the update. 
-            # Ideally passed in cache, here we allocate if not available or assume safety.
-            # For this snippet, I will allocate one locally to be safe.
-            v_row = zeros(n)
-            nonlinearlstr.solve_damped_system_recursive_inplace!(
-                p,
-                R_buffer,
-                rhs_buffer,
-                λ,
-                n,
-                Dk,
-                perm,
-                v_row,
-            )
-
-            # Analytical derivative
-            nonlinearlstr.solve_for_dp_dlambda_scaled!(
-                dpdλ,
-                R_buffer,
-                p,
-                Dk,
-                perm,
-                perm_buffer,
-            )
-            # Finite difference reference
-            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
-
-            @test dpdλ ≈ dp_dλ_fd atol=1e-6
-        end
-
-        @testset "Derivative dp/dλ - EVD Method" begin
-            strat = nonlinearlstr.EVDSolve()
-            F = eigen(J'J)
-            Dk = I(n)
-
-            # Analytical derivative
-            p, dp_dλ_evd = nonlinearlstr.solve_augmented_with_derivative(strat, F, J, -f, λ)
-
-
-            # Automatic difference reference
-            dp_dλ_fd = ForwardDiff.derivative(λ -> get_p(J, f, λ), λ)
-
-            @test dp_dλ_evd ≈ dp_dλ_fd atol=1e-6
-        end
-
-
-    end
-
-    @testset "Trust Region Subproblem Solver" begin
-        @testset "QR-based Solver" begin
-            strat = nonlinearlstr.QRSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            λ_qr, δ_qr = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
-
-            @test abs(λ_qr - λ) < 1e-3
-            @test norm(δ_qr) ≈ size_p atol=1e-3
-            @test δ_qr ≈ p_ref atol=1e-3
-        end
-
-        @testset "SVD-based Solver" begin
-            strat = nonlinearlstr.SVDSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            λ_svd, δ_svd = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
-
-            @test abs(λ_svd - λ) < 1e-3
-            @test norm(δ_svd) ≈ size_p atol=1e-3
-            @test δ_svd ≈ p_ref atol=1e-3
-        end
-
-        @testset "QR-recursivebased Solver" begin
-            strat = nonlinearlstr.QRrecursiveSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            λ_qr, δ_qr = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
-
-            @test abs(λ_qr - λ) < 1e-3
-            @test norm(δ_qr) ≈ size_p atol=1e-3
-            @test δ_qr ≈ p_ref atol=1e-3
-        end
-
-        @testset "EVD Solver" begin
-            strat = nonlinearlstr.EVDSolve()
-            scaling = nonlinearlstr.NoScaling()
-            cache = nonlinearlstr.SubproblemCache(strat, scaling, J)
-
-            λ_evd, δ_evd = nonlinearlstr.solve_subproblem(strat, J, f, size_p, cache)
-
-            @test abs(λ_evd - λ) < 1e-3
-            @test norm(δ_evd) ≈ size_p atol=1e-3
-            @test δ_evd ≈ p_ref atol=1e-3
-        end
-
-        @testset "Method Consistency" begin
-            # Both methods should give similar results
-            strat_qr = nonlinearlstr.QRSolve()
-            strat_svd = nonlinearlstr.SVDSolve()
-            scaling = nonlinearlstr.NoScaling()
-
-            cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
-            cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
-
-            λ_qr, δ_qr = nonlinearlstr.solve_subproblem(strat_qr, J, f, size_p, cache_qr)
-            λ_svd, δ_svd =
-                nonlinearlstr.solve_subproblem(strat_svd, J, f, size_p, cache_svd)
-
-            @test λ_qr ≈ λ_svd atol=1e-2
-            @test δ_qr ≈ δ_svd atol=1e-2
+@testset "rank-deficient wide J: minimum-norm Gauss–Newton step (COD)" begin
+    Random.seed!(3)
+    for (n, m, r) in ((4, 9, 2), (5, 12, 4), (3, 7, 1))
+        J = randn(n, r) * randn(r, m)                     # exact rank r
+        f = randn(n)
+        for strategy in (NL.LQStrategy(), NL.LQCholStrategy())
+            cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+            @test NL.numerical_rank(cache.factorization) == r
+            @test NL.solve_subproblem(J, f, 1e6, cache, 0.0) == 0
+            @test cache.p ≈ pinv(J) * (-f) rtol = 1e-8
+            @test norm(J' * (J * cache.p + f)) < 1e-8 * norm(J) * norm(f)
         end
     end
+end
 
-    # @testset "Performance Benchmarks" begin
-    #     # Note: These are for development/profiling, not automated testing
-    #     println("\n=== Performance Benchmarks ===")
+# Conditioning. The QR strategies factorize J itself and stay accurate throughout; the Cholesky
+# strategies form JᵀJ (or J D⁻² Jᵀ), squaring cond(J), so they degrade and eventually fail — by
+# design, see the QRCholStrategy docstring. cond(J) = 1e8 already means cond(JᵀJ) = 1e16 ≈ 1/eps.
+function illconditioned_problem(k; n = 40, m = 6)
+    Random.seed!(k)
+    U = Matrix(qr(randn(n, n)).Q)[:, 1:m]
+    V = Matrix(qr(randn(m, m)).Q)
+    J = U * Diagonal(exp10.(range(0, -k, length = m))) * V      # singular values 1 … 10^-k
+    return J, randn(n)
+end
 
-    #     println("Benchmarking QR-based solve:")
-    #     strat_qr = nonlinearlstr.QRSolve()
-    #     scaling = nonlinearlstr.NoScaling()
-    #     cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
-    #     @benchmark nonlinearlstr.solve_subproblem($strat_qr, $J, $f, $size_p, $cache_qr)
+@testset "ill-conditioned J: QR strategies stay on the boundary, cond(J) = 1e$k" for k in (
+    4,
+    8,
+    12,
+)
+    J, f = illconditioned_problem(k)
+    D = Diagonal(ones(size(J, 2)))
+    p_gn = -J \ f
+    for strategy in (NL.QRStrategy(), NL.LQStrategy()), fraction in (1e-3, 0.5)
+        size(J, 1) > size(J, 2) && wide_only(strategy) && continue
+        Δ = fraction * norm(p_gn)
+        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+        λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+        @test on_boundary(norm(cache.p), Δ)
+        @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
+    end
+end
 
-    #     println("Benchmarking SVD-based solve:")
-    #     strat_svd = nonlinearlstr.SVDSolve()
-    #     cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
-    #     @benchmark nonlinearlstr.solve_subproblem($strat_svd, $J, $f, $size_p, $cache_svd)
-    # end
-
-    # @testset "Type Stability" begin
-    #     # Check for type instabilities
-    #     println("\n=== Type Stability Analysis ===")
-
-    #     println("QR method type analysis:")
-    #     strat_qr = nonlinearlstr.QRSolve()
-    #     scaling = nonlinearlstr.NoScaling()
-    #     cache_qr = nonlinearlstr.SubproblemCache(strat_qr, scaling, J)
-    #     @code_warntype nonlinearlstr.solve_subproblem(strat_qr, J, f, size_p, cache_qr)
-
-    #     println("SVD method type analysis:")
-    #     strat_svd = nonlinearlstr.SVDSolve()
-    #     cache_svd = nonlinearlstr.SubproblemCache(strat_svd, scaling, J)
-    #     @code_warntype nonlinearlstr.solve_subproblem(strat_svd, J, f, size_p, cache_svd)
-    # end
+@testset "ill-conditioned J: the Cholesky strategies degrade as cond(JᵀJ) grows" begin
+    D = Diagonal(ones(6))
+    # cond(JᵀJ) = 1e8: still fine, and the model value agrees with the stable QR strategy.
+    J, f = illconditioned_problem(4)
+    p_gn = -J \ f
+    for fraction in (1e-3, 0.5)
+        Δ = fraction * norm(p_gn)
+        model_value = map((NL.QRCholStrategy(), NL.QRStrategy())) do strategy
+            cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+            λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+            @test on_boundary(norm(cache.p), Δ)
+            @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
+            return sum(abs2, J * cache.p + f) / 2
+        end
+        @test model_value[1] ≈ model_value[2] rtol = 1e-8
+    end
+    # cond(JᵀJ) = 1e16: the returned (λ, p) still satisfies the normal equations, but the
+    # λ-iteration can no longer place ‖Dp‖ on the boundary at any iteration count.
+    J, f = illconditioned_problem(8)
+    Δ = 0.5 * norm(-J \ f)
+    cache = NL.subproblem_cache_init(NL.QRCholStrategy(), NL.NoScaling(), J)
+    λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+    @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
+    # cond(JᵀJ) = 1e24: the λ the bracket asks for is below eps·σmax², so JᵀJ + λD² — positive
+    # definite in exact arithmetic — may be numerically indefinite and the factorization fails.
+    # Whether it does depends on the LAPACK build, so accept either outcome, but never a step that
+    # silently violates the normal equations.
+    J, f = illconditioned_problem(12)
+    Δ = 0.5 * norm(-J \ f)
+    for strategy in (NL.QRCholStrategy(), NL.LQCholStrategy())
+        size(J, 1) > size(J, 2) && wide_only(strategy) && continue
+        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+        try
+            λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+            @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
+        catch err
+            @test err isa PosDefException
+        end
+    end
 end
