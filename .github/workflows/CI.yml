@@ -83,9 +83,9 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Documenter: DocMeta, doctest
-          using nonlinearlstr
-          DocMeta.setdocmeta!(nonlinearlstr, :DocTestSetup, :(using nonlinearlstr); recursive=true)
-          doctest(nonlinearlstr)
+          using TrustRegionLeastSquares
+          DocMeta.setdocmeta!(TrustRegionLeastSquares, :DocTestSetup, :(using TrustRegionLeastSquares); recursive=true)
+          doctest(TrustRegionLeastSquares)
 
   # Code quality checks
   format-check:
@@ -122,8 +122,8 @@ jobs:
         run: |
           using Pkg
           Pkg.add("Aqua")
-          using Aqua, nonlinearlstr
-          Aqua.test_all(nonlinearlstr; ambiguities=false, stale_deps=false)
+          using Aqua, TrustRegionLeastSquares
+          Aqua.test_all(TrustRegionLeastSquares; ambiguities=false, stale_deps=false)
 
   # Benchmark tracking (optional)
   benchmark:

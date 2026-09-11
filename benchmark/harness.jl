@@ -1,9 +1,9 @@
-# Cross-package benchmark harness for nonlinearlstr.
+# Cross-package benchmark harness for TrustRegionLeastSquares.
 #
 # This is the single entry point the benchmark scripts include. It loads the heavy
 # dependencies and the harness pieces in the right order.
 #
-# ONE-TIME SETUP (nonlinearlstr is a local dev package, not registered, so it must be
+# ONE-TIME SETUP (TrustRegionLeastSquares is a local dev package, not registered, so it must be
 # dev'd into this env by path before instantiate can resolve it):
 #
 #   julia --project=benchmark -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'

@@ -5,7 +5,7 @@ using PRIMA
 using NonlinearSolve
 using Revise
 using DataFrames
-using nonlinearlstr
+import TrustRegionLeastSquares as TRLS
 using LsqFit
 # Full problem suite by default; same knobs as compare_unconstrained.jl for quick runs:
 #   MAX_VARS      - only include problems with at most this many variables (default 999)
@@ -17,8 +17,8 @@ let probs = find_nlls_problems(MAX_VARS)
 end
 
 solvers = [
-    # nonlinearlstr (LM-QR, the method this poster presents)
-    ("This work", nonlinearlstr.lm_trust_region!),
+    # TrustRegionLeastSquares (LM-QR, the method this poster presents)
+    ("This work", TRLS.lm_trust_region!),
 
     # NonlinearSolve.jl (short labels for the poster legend; dispatch matches the
     # "NonlinearSolve-" prefix)

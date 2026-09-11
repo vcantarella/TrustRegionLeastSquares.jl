@@ -18,13 +18,13 @@ for (csvname, figname, legend, atol) in [
     ),
     (
         "nlls_results_internal_overdetermined.csv",
-        "nonlinearlstr_internal_overdetermined",
+        "trls_internal_overdetermined",
         true,
         1e-4,
     ),
     (
         "nlls_results_internal_underdetermined.csv",
-        "nonlinearlstr_internal_underdetermined",
+        "trls_internal_underdetermined",
         true,
         1e-4,
     ),

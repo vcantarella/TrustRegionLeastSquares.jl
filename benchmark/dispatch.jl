@@ -44,18 +44,18 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
     """Test a single solver on a problem"""
     try
         if solver_name == "This work" || startswith(solver_name, "LM-")
-            # nonlinearlstr. The label picks the variant: "This work" / "LM-QR" -> QRStrategy,
+            # TrustRegionLeastSquares. The label picks the variant: "This work" / "LM-QR" -> QRStrategy,
             # "LM-QRChol" -> QRCholStrategy, "LM-LQ" / "LM-LQChol" -> the LQ family (residuals <=
             # variables only); a "-scaled" suffix switches on JacobianScaling. Bounds are always
             # passed: infinite bounds take the unconstrained path, finite ones the projected step.
             scaling_strategy =
                 contains(lowercase(solver_name), "scaled") ?
-                nonlinearlstr.JacobianScaling() : nonlinearlstr.NoScaling()
+                TRLS.JacobianScaling() : TRLS.NoScaling()
             subproblem_strategy =
-                contains(solver_name, "LQChol") ? nonlinearlstr.LQCholStrategy() :
-                contains(solver_name, "QRChol") ? nonlinearlstr.QRCholStrategy() :
-                contains(solver_name, "LQ") ? nonlinearlstr.LQStrategy() :
-                nonlinearlstr.QRStrategy()
+                contains(solver_name, "LQChol") ? TRLS.LQCholStrategy() :
+                contains(solver_name, "QRChol") ? TRLS.QRCholStrategy() :
+                contains(solver_name, "LQ") ? TRLS.LQStrategy() :
+                TRLS.QRStrategy()
             solve_once() = solver_func(
                 prob_data.residual_func!,
                 prob_data.jacobian_func!,
@@ -73,7 +73,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             t = minimum(@be solve_once()).time
             final_cost = 0.5 * dot(r_opt, r_opt)
             converged =
-                nonlinearlstr.projected_gradient_norm(
+                TRLS.projected_gradient_norm(
                     g_opt,
                     x_opt,
                     prob_data.bl,

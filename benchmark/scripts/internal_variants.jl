@@ -1,11 +1,12 @@
-# The nonlinearlstr variants (QRChol / QR / LQ / LQChol subproblem strategies, with and
+# The TrustRegionLeastSquares variants (QRChol / QR / LQ / LQChol subproblem strategies, with and
 # without JacobianScaling) scored against each other.
 # Run with:
 #   julia --project=benchmark benchmark/scripts/internal_variants.jl
 # Knobs (env vars, as in the compare_* scripts): MAX_VARS, PROBLEM_LIMIT, CROP_RATIO.
 include(joinpath(@__DIR__, "..", "harness.jl"))
 include(joinpath(@__DIR__, "..", "evaluate.jl"))
-using DataFrames, CSV, nonlinearlstr
+using DataFrames, CSV
+import TrustRegionLeastSquares as TRLS
 
 const MAX_VARS = parse(Int, get(ENV, "MAX_VARS", "999"))
 const PROBLEM_LIMIT = parse(Int, get(ENV, "PROBLEM_LIMIT", "0"))  # 0 = no cap
@@ -17,7 +18,7 @@ const results_dir = normpath(joinpath(@__DIR__, "..", "results"))
 crop(pd) = crop_nls_functions(pd, clamp(ceil(Int, CROP_RATIO * pd.m), 1, pd.m - 1))
 
 # The label selects strategy and scaling in dispatch.jl.
-lm = nonlinearlstr.lm_trust_region!
+lm = TRLS.lm_trust_region!
 variants =
     [("LM-QRChol", lm), ("LM-QR", lm), ("LM-QRChol-scaled", lm), ("LM-QR-scaled", lm)]
 lq_variants =
@@ -36,7 +37,7 @@ end
 
 function finish_suite(suite, df_proc, tbl)
     display(tbl)
-    figpath = joinpath(plots_dir(), "nonlinearlstr_internal_$suite.png")
+    figpath = joinpath(plots_dir(), "trls_internal_$suite.png")
     save(figpath, build_performance_plots(df_proc; background = :white))
     println("plot: $figpath")
 end

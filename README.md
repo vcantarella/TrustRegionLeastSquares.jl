@@ -1,6 +1,6 @@
-# nonlinearlstr.jl: An Experiment to Benchmark Nonlinear Least-Squares Solvers and Propose a Trust Region Alternative
+# TrustRegionLeastSquares.jl: An Experiment to Benchmark Nonlinear Least-Squares Solvers and Propose a Trust Region Alternative
 
-[![Build Status](https://github.com/vcantarella/nonlinearlstr.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/vcantarella/nonlinearlstr.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Build Status](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 This repository is two things:
 
@@ -15,7 +15,7 @@ The headline finding: judged by raw wall-clock on small test problems, the propo
 
 | Solver (label in figures) | Package | Method |
 |---|---|---|
-| This work | `nonlinearlstr.jl` v0.2 | LM trust region (QR) |
+| This work | `TrustRegionLeastSquares.jl` v0.2 | LM trust region (QR) |
 | NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.20 | TrustRegion, LevenbergMarquardt |
 | JSO-TRON | JSOSolvers.jl v0.14 | TRON |
 | LSO-Levenberg-QR | LeastSquaresOptim.jl v0.8 | Levenberg–Marquardt (QR) |
@@ -147,7 +147,7 @@ This is the regime the solver is designed for: **fewer steps beat cheaper steps*
 The residual and Jacobian are **in-place**: `res!(f, x)` fills the residual vector, `jac!(J, x)` the Jacobian. The fourth argument is the number of residuals.
 
 ```julia
-using nonlinearlstr
+using TrustRegionLeastSquares
 
 # Rosenbrock as a least-squares problem: f = [10(x₂ - x₁²), 1 - x₁]
 rosenbrock!(f, x) = (f[1] = 10 * (x[2] - x[1]^2); f[2] = 1 - x[1]; f)
@@ -162,8 +162,8 @@ A different factorization strategy and variable scaling are positional arguments
 ```julia
 x, f, g, iter = lm_trust_region!(
     rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2,
-    nonlinearlstr.QRStrategy(),        # subproblem strategy (default: QRCholStrategy())
-    nonlinearlstr.JacobianScaling(),   # variable scaling   (default: NoScaling())
+    TrustRegionLeastSquares.QRStrategy(),        # subproblem strategy (default: QRCholStrategy())
+    TrustRegionLeastSquares.JacobianScaling(),   # variable scaling   (default: NoScaling())
 )
 ```
 
@@ -199,7 +199,7 @@ for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/vcantarella/nonlinearlstr.jl")
+Pkg.add(url="https://github.com/vcantarella/TrustRegionLeastSquares.jl")
 ```
 
 ## Status

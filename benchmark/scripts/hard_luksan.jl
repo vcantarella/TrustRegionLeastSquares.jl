@@ -4,7 +4,8 @@
 include(joinpath(@__DIR__, "..", "harness.jl"))
 include(joinpath(@__DIR__, "..", "evaluate.jl"))
 using DataFrames, ForwardDiff, LinearAlgebra, Test
-using PRIMA, NonlinearSolve, LeastSquaresOptim, nonlinearlstr
+using PRIMA, NonlinearSolve, LeastSquaresOptim
+import TrustRegionLeastSquares as TRLS
 
 # Hard Problems in Luksan, 1995
 fa1(x, t) = x[1] + x[2]*exp(x[3]*t)
@@ -94,10 +95,10 @@ resa6(x06)
 
 
 solvers = [
-    ("This work", nonlinearlstr.lm_trust_region!),
-    ("LM-QR-scaled", nonlinearlstr.lm_trust_region!),
-    ("LM-QRChol", nonlinearlstr.lm_trust_region!),
-    ("LM-QRChol-scaled", nonlinearlstr.lm_trust_region!),
+    ("This work", TRLS.lm_trust_region!),
+    ("LM-QR-scaled", TRLS.lm_trust_region!),
+    ("LM-QRChol", TRLS.lm_trust_region!),
+    ("LM-QRChol-scaled", TRLS.lm_trust_region!),
     ("PRIMA-NEWUOA", nothing),  # Special handling
     ("PRIMA-BOBYQA", nothing),  # Special handling
     ("NonlinearSolve-TrustRegion", NonlinearSolve.TrustRegion),

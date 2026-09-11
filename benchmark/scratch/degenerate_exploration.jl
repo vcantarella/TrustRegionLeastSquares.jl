@@ -1,5 +1,5 @@
 using NonlinearSolve
-using nonlinearlstr
+import TrustRegionLeastSquares as TRLS
 
 
 function f!(F, x, p)
@@ -37,12 +37,12 @@ function j!(J, x)
     J[1, 2] = 0.0
     J[2, 2] = 0.0
 end
-sol_nlstr = nonlinearlstr.lm_trust_region!(
+sol_nlstr = TRLS.lm_trust_region!(
     f!,
     j!,
     x0,
     2,
-    nonlinearlstr.LQStrategy();
+    TRLS.LQStrategy();
     verbose = true,
 )
 

@@ -51,12 +51,12 @@ end
     Random.seed!(11)
     A = randn(4, 10)
     b = randn(4)
-    for strategy in (NL.LQStrategy(), NL.LQCholStrategy())
+    for strategy in (TRLS.LQStrategy(), TRLS.LQCholStrategy())
         s = solve(
             x -> A * x - b,
             zeros(10),
             strategy,
-            NL.NoScaling();
+            TRLS.NoScaling();
             initial_radius = 1e3,
             norm_overrides_initial_radius = false,
         )

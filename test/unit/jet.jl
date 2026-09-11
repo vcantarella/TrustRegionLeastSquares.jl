@@ -14,7 +14,7 @@ isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
     res!(r, x) = (r .= A * x .- b; r)
     jac!(J, x) = (J .= A; J)
     lo, hi = fill(-1.0, n), fill(2.0, n)
-    @test_opt target_modules = (nonlinearlstr,) NL.lm_trust_region!(
+    @test_opt target_modules = (TrustRegionLeastSquares,) TRLS.lm_trust_region!(
         res!,
         jac!,
         zeros(n),
@@ -23,7 +23,7 @@ isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
         scaling;
         max_iter = 10,
     )
-    @test_call target_modules = (nonlinearlstr,) NL.lm_trust_region!(
+    @test_call target_modules = (TrustRegionLeastSquares,) TRLS.lm_trust_region!(
         res!,
         jac!,
         zeros(n),
@@ -32,7 +32,7 @@ isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
         scaling;
         max_iter = 10,
     )
-    @test_opt target_modules = (nonlinearlstr,) NL.lm_trust_region!(
+    @test_opt target_modules = (TrustRegionLeastSquares,) TRLS.lm_trust_region!(
         res!,
         jac!,
         zeros(n),
@@ -43,7 +43,7 @@ isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
         lb = lo,
         ub = hi,
     )
-    @test_call target_modules = (nonlinearlstr,) NL.lm_trust_region!(
+    @test_call target_modules = (TrustRegionLeastSquares,) TRLS.lm_trust_region!(
         res!,
         jac!,
         zeros(n),
@@ -59,7 +59,7 @@ end
 # Whole-package analysis: every method as declared, including generic signatures no test calls
 # directly (an `x0` whose `length` is not inferrable as an Int, for instance). Asserted clean.
 @testset "JET: package-level report" begin
-    report = report_package(nonlinearlstr; target_modules = (nonlinearlstr,))
+    report = report_package(TrustRegionLeastSquares; target_modules = (TrustRegionLeastSquares,))
     issues = JET.get_reports(report)
     isempty(issues) || @info "JET report_package" report
     @test isempty(issues)

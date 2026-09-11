@@ -4,5 +4,5 @@
 ```
 
 ```@autodocs
-Modules = [nonlinearlstr]
+Modules = [TrustRegionLeastSquares]
 ```

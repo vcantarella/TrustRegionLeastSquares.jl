@@ -1,4 +1,4 @@
-using nonlinearlstr
+using TrustRegionLeastSquares
 using Test
 
 # Unit / correctness suite: pure Julia + LinearAlgebra + ForwardDiff, so it runs on every OS in CI.

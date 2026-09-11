@@ -11,7 +11,7 @@ using PRIMA
 using NonlinearSolve
 using Revise
 using DataFrames
-using nonlinearlstr
+import TrustRegionLeastSquares as TRLS
 using LsqFit
 const MAX_VARS = parse(Int, get(ENV, "MAX_VARS", "999"))
 const PROBLEM_LIMIT = parse(Int, get(ENV, "PROBLEM_LIMIT", "0"))  # 0 = no cap
@@ -20,8 +20,8 @@ let probs = find_nlls_problems(MAX_VARS)
 end
 
 solvers = [
-    # nonlinearlstr (LM-QR, the method this poster presents)
-    ("This work", nonlinearlstr.lm_trust_region!),
+    # TrustRegionLeastSquares (LM-QR, the method this poster presents)
+    ("This work", TRLS.lm_trust_region!),
 
     # PRIMA (Best: NEWUOA for unconstrained)
     #("PRIMA-NEWUOA", nothing),

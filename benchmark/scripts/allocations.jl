@@ -1,8 +1,8 @@
 # Time, bytes and allocation counts per strategy × scaling, for one subproblem solve and for a
 # full 20-iteration lm_trust_region! run, on a synthetic exponential fit r_i = exp(a_iᵀx) − b_i.
 #   julia --project=benchmark benchmark/scripts/allocations.jl
-using Chairmarks, DataFrames, CSV, LinearAlgebra, Random, nonlinearlstr
-const NL = nonlinearlstr
+using Chairmarks, DataFrames, CSV, LinearAlgebra, Random
+import TrustRegionLeastSquares as TRLS
 
 function expfit(n, m; seed = 1)
     Random.seed!(seed)
@@ -14,15 +14,15 @@ function expfit(n, m; seed = 1)
 end
 
 sizes = [(20, 10), (200, 50), (2000, 200), (10, 20), (50, 200), (200, 2000)]
-strategies = (NL.QRCholStrategy(), NL.QRStrategy(), NL.LQStrategy(), NL.LQCholStrategy())
-scalings = (NL.NoScaling(), NL.JacobianScaling())
+strategies = (TRLS.QRCholStrategy(), TRLS.QRStrategy(), TRLS.LQStrategy(), TRLS.LQCholStrategy())
+scalings = (TRLS.NoScaling(), TRLS.JacobianScaling())
 rows = []
 for (n, m) in sizes, strategy in strategies, scaling in scalings
-    strategy isa Union{NL.LQStrategy,NL.LQCholStrategy} && n > m && continue
+    strategy isa Union{TRLS.LQStrategy,TRLS.LQCholStrategy} && n > m && continue
     res!, jac!, x0 = expfit(n, m)
     # gtol = ftol = min_trust_radius = 0: no early exit, exactly 20 iterations
     full = minimum(
-        @be NL.lm_trust_region!(
+        @be TRLS.lm_trust_region!(
             res!,
             jac!,
             x0,
@@ -38,9 +38,9 @@ for (n, m) in sizes, strategy in strategies, scaling in scalings
     J, f = zeros(n, m), zeros(n)
     jac!(J, x0)
     res!(f, x0)
-    cache = NL.subproblem_cache_init(strategy, scaling, J)
+    cache = TRLS.subproblem_cache_init(strategy, scaling, J)
     Δ = 0.5 * norm(cache.scaling_matrix * (pinv(J) * f))     # boundary solution: the λ-iteration runs
-    sub = minimum(@be NL.solve_subproblem(J, f, Δ, cache, 0.0))
+    sub = minimum(@be TRLS.solve_subproblem(J, f, Δ, cache, 0.0))
     push!(
         rows,
         (

@@ -19,4 +19,4 @@ using StaticArrays
 using Static
 scipy = pyimport("scipy")
 
-using nonlinearlstr
+import TrustRegionLeastSquares as TRLS

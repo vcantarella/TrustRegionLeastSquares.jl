@@ -16,27 +16,27 @@ on_boundary(Dp_norm, Δ; θ = 1e-4) = (1 - θ) * Δ <= Dp_norm <= (1 + θ) * Δ
         J = randn(n, m)
         J[:, 1] .*= 1e3                                   # badly scaled column: D ≠ I under JacobianScaling
         f = randn(n)
-        cache = NL.subproblem_cache_init(strategy, scaling, J)
+        cache = TRLS.subproblem_cache_init(strategy, scaling, J)
         D = cache.scaling_matrix
-        if scaling isa NL.JacobianScaling
+        if scaling isa TRLS.JacobianScaling
             @test D.diag ≈ [norm(J[:, i]) for i = 1:m]
         else
             @test D == I
         end
         p_gn = -pinv(J) * f                               # least-squares (tall) or minimum-norm (wide) solution
         # Gauss–Newton step inside the region: λ = 0 and p is the pseudo-inverse solution
-        λ = NL.solve_subproblem(J, f, 2 * norm(D * p_gn), cache, 0.0)
+        λ = TRLS.solve_subproblem(J, f, 2 * norm(D * p_gn), cache, 0.0)
         @test λ == 0
         @test cache.p ≈ p_gn rtol = 1e-10
         # Step on the boundary: ‖Dp‖ = Δ within θ and the normal equations hold for the returned λ
         Δ = 0.5 * norm(D * p_gn)
-        λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+        λ = TRLS.solve_subproblem(J, f, Δ, cache, 0.0)
         @test λ > 0
         @test on_boundary(norm(D * cache.p), Δ)
         @test normal_equation_error(J, f, D, λ, cache.p) < 1e-12
         # Warm start from the converged λ reproduces the step
         p_boundary = copy(cache.p)
-        @test NL.solve_subproblem(J, f, Δ, cache, λ) ≈ λ
+        @test TRLS.solve_subproblem(J, f, Δ, cache, λ) ≈ λ
         @test cache.p ≈ p_boundary
     end
 end
@@ -44,15 +44,15 @@ end
 @testset "JacobianScaling: Moré's non-decreasing column norms" begin
     Random.seed!(2)
     J = randn(8, 3)
-    D = NL.scaling!(Diagonal(zeros(3)), NL.JacobianScaling(), J)
+    D = TRLS.scaling!(Diagonal(zeros(3)), TRLS.JacobianScaling(), J)
     column_norms = copy(D.diag)
-    NL.scaling!(D, NL.JacobianScaling(), 0.1 * J)
+    TRLS.scaling!(D, TRLS.JacobianScaling(), 0.1 * J)
     @test D.diag == column_norms                          # smaller norms leave D unchanged
-    NL.scaling!(D, NL.JacobianScaling(), 10 * J)
+    TRLS.scaling!(D, TRLS.JacobianScaling(), 10 * J)
     @test D.diag ≈ 10 * column_norms
     J[:, 2] .= 0
-    @test NL.scaling!(Diagonal(zeros(3)), NL.JacobianScaling(), J).diag[2] == 1   # zero column → 1
-    @test NL.scaling!(D, NL.NoScaling(), J) == I
+    @test TRLS.scaling!(Diagonal(zeros(3)), TRLS.JacobianScaling(), J).diag[2] == 1   # zero column → 1
+    @test TRLS.scaling!(D, TRLS.NoScaling(), J) == I
 end
 
 @testset "rank-deficient wide J: minimum-norm Gauss–Newton step (COD)" begin
@@ -60,10 +60,10 @@ end
     for (n, m, r) in ((4, 9, 2), (5, 12, 4), (3, 7, 1))
         J = randn(n, r) * randn(r, m)                     # exact rank r
         f = randn(n)
-        for strategy in (NL.LQStrategy(), NL.LQCholStrategy())
-            cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
-            @test NL.numerical_rank(cache.factorization) == r
-            @test NL.solve_subproblem(J, f, 1e6, cache, 0.0) == 0
+        for strategy in (TRLS.LQStrategy(), TRLS.LQCholStrategy())
+            cache = TRLS.subproblem_cache_init(strategy, TRLS.NoScaling(), J)
+            @test TRLS.numerical_rank(cache.factorization) == r
+            @test TRLS.solve_subproblem(J, f, 1e6, cache, 0.0) == 0
             @test cache.p ≈ pinv(J) * (-f) rtol = 1e-8
             @test norm(J' * (J * cache.p + f)) < 1e-8 * norm(J) * norm(f)
         end
@@ -89,11 +89,11 @@ end
     J, f = illconditioned_problem(k)
     D = Diagonal(ones(size(J, 2)))
     p_gn = -J \ f
-    for strategy in (NL.QRStrategy(), NL.LQStrategy()), fraction in (1e-3, 0.5)
+    for strategy in (TRLS.QRStrategy(), TRLS.LQStrategy()), fraction in (1e-3, 0.5)
         size(J, 1) > size(J, 2) && wide_only(strategy) && continue
         Δ = fraction * norm(p_gn)
-        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
-        λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+        cache = TRLS.subproblem_cache_init(strategy, TRLS.NoScaling(), J)
+        λ = TRLS.solve_subproblem(J, f, Δ, cache, 0.0)
         @test on_boundary(norm(cache.p), Δ)
         @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
     end
@@ -106,9 +106,9 @@ end
     p_gn = -J \ f
     for fraction in (1e-3, 0.5)
         Δ = fraction * norm(p_gn)
-        model_value = map((NL.QRCholStrategy(), NL.QRStrategy())) do strategy
-            cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
-            λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+        model_value = map((TRLS.QRCholStrategy(), TRLS.QRStrategy())) do strategy
+            cache = TRLS.subproblem_cache_init(strategy, TRLS.NoScaling(), J)
+            λ = TRLS.solve_subproblem(J, f, Δ, cache, 0.0)
             @test on_boundary(norm(cache.p), Δ)
             @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
             return sum(abs2, J * cache.p + f) / 2
@@ -119,8 +119,8 @@ end
     # λ-iteration can no longer place ‖Dp‖ on the boundary at any iteration count.
     J, f = illconditioned_problem(8)
     Δ = 0.5 * norm(-J \ f)
-    cache = NL.subproblem_cache_init(NL.QRCholStrategy(), NL.NoScaling(), J)
-    λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+    cache = TRLS.subproblem_cache_init(TRLS.QRCholStrategy(), TRLS.NoScaling(), J)
+    λ = TRLS.solve_subproblem(J, f, Δ, cache, 0.0)
     @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
     # cond(JᵀJ) = 1e24: the λ the bracket asks for is below eps·σmax², so JᵀJ + λD² — positive
     # definite in exact arithmetic — may be numerically indefinite and the factorization fails.
@@ -128,11 +128,11 @@ end
     # silently violates the normal equations.
     J, f = illconditioned_problem(12)
     Δ = 0.5 * norm(-J \ f)
-    for strategy in (NL.QRCholStrategy(), NL.LQCholStrategy())
+    for strategy in (TRLS.QRCholStrategy(), TRLS.LQCholStrategy())
         size(J, 1) > size(J, 2) && wide_only(strategy) && continue
-        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+        cache = TRLS.subproblem_cache_init(strategy, TRLS.NoScaling(), J)
         try
-            λ = NL.solve_subproblem(J, f, Δ, cache, 0.0)
+            λ = TRLS.solve_subproblem(J, f, Δ, cache, 0.0)
             @test normal_equation_error(J, f, D, λ, cache.p) < 1e-10
         catch err
             @test err isa PosDefException

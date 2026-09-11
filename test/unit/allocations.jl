@@ -18,10 +18,10 @@ const ITERATION_CEIL = 160_000      # bytes per iteration of lm_trust_region!
     for (n, m) in ((20, 10), (10, 20)), strategy in STRATEGIES
         wide_only(strategy) && n > m && continue
         J, f = randn(n, m), randn(n)
-        cache = NL.subproblem_cache_init(strategy, NL.NoScaling(), J)
+        cache = TRLS.subproblem_cache_init(strategy, TRLS.NoScaling(), J)
         p_gn_norm = norm(pinv(J) * f)
         for (path, Δ) in (("Gauss-Newton", 2 * p_gn_norm), ("boundary", 0.5 * p_gn_norm))
-            bytes = minimum(@be NL.solve_subproblem($J, $f, $Δ, $cache, 0.0)).bytes
+            bytes = minimum(@be TRLS.solve_subproblem($J, $f, $Δ, $cache, 0.0)).bytes
             println("  $(label(strategy)) $(n)×$(m) $path: $bytes bytes")
             @test bytes <= SUBPROBLEM_CEIL
         end
@@ -32,7 +32,7 @@ end
     rosen!(f, x) = (f[1] = 10(x[2] - x[1]^2); f[2] = 1 - x[1]; f)
     rosen_jac!(J, x) = (J[1, 1] = -20x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
     # gtol = ftol = min_trust_radius = 0 disables every early exit, so the solver runs exactly max_iter iterations.
-    run(strategy, k) = NL.lm_trust_region!(
+    run(strategy, k) = TRLS.lm_trust_region!(
         rosen!,
         rosen_jac!,
         [-1.2, 1.0],
@@ -46,7 +46,7 @@ end
     for strategy in STRATEGIES, bounded in (false, true)
         kw = bounded ? (lb = [-2.0, -2.0], ub = [0.5, 2.0]) : (;)
         bytes(k) = minimum(
-            @be NL.lm_trust_region!(
+            @be TRLS.lm_trust_region!(
                 rosen!,
                 rosen_jac!,
                 [-1.2, 1.0],

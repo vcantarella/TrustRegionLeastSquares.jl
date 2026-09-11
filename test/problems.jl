@@ -1,6 +1,6 @@
 # Shared test problems. `MGH` is the Moré–Garbow–Hillstrom (1981) collection with the
 # reference values from that paper: `Fstar` is Σ rᵢ² (twice the cost ½‖r‖² this package minimizes).
-using ForwardDiff, LinearAlgebra, nonlinearlstr
+using ForwardDiff, LinearAlgebra, TrustRegionLeastSquares
 
 "Turn an out-of-place residual `r(x)` into the in-place `(res!, jac!)` pair the solver takes."
 inplace(r) = ((f, x) -> (f .= r(x); f), (J, x) -> (ForwardDiff.jacobian!(J, r, x); J))
@@ -24,7 +24,7 @@ end
 
 function solve(r, x0, strategy, scaling; kwargs...)
     res!, jac! = inplace(r)
-    x, f, g, iter = nonlinearlstr.lm_trust_region!(
+    x, f, g, iter = TrustRegionLeastSquares.lm_trust_region!(
         res!,
         jac!,
         copy(x0),
@@ -184,9 +184,9 @@ const MGH = [
     (name = "Watson 6", r = watson, x0 = zeros(6), Fstar = 2.28767e-3),
 ]
 
-const NL = nonlinearlstr
+import TrustRegionLeastSquares as TRLS
 const STRATEGIES =
-    (NL.QRCholStrategy(), NL.QRStrategy(), NL.LQStrategy(), NL.LQCholStrategy())
-const SCALINGS = (NL.NoScaling(), NL.JacobianScaling())
-wide_only(strategy) = strategy isa Union{NL.LQStrategy,NL.LQCholStrategy}
+    (TRLS.QRCholStrategy(), TRLS.QRStrategy(), TRLS.LQStrategy(), TRLS.LQCholStrategy())
+const SCALINGS = (TRLS.NoScaling(), TRLS.JacobianScaling())
+wide_only(strategy) = strategy isa Union{TRLS.LQStrategy,TRLS.LQCholStrategy}
 label(x) = string(nameof(typeof(x)))

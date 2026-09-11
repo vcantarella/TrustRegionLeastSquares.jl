@@ -1,4 +1,4 @@
-module nonlinearlstr
+module TrustRegionLeastSquares
 using LinearAlgebra
 include("scaling.jl")
 include("caches.jl")

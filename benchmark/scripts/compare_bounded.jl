@@ -7,7 +7,7 @@ using PRIMA
 using NonlinearSolve
 using DataFrames, CSV
 using LsqFit
-using nonlinearlstr
+import TrustRegionLeastSquares as TRLS
 using Test
 
 # 1. Find and prepare problems from three sources:
@@ -26,9 +26,9 @@ custom_problems = nameof.(get_custom_problems())   # all 15 ADNLSModel construct
 append!(nls_problems, custom_problems)
 # 2. Define solvers
 solvers = [
-    ("This work", nonlinearlstr.lm_trust_region!),
-    ("LM-QR-scaled", nonlinearlstr.lm_trust_region!),
-    ("LM-QRChol", nonlinearlstr.lm_trust_region!),
+    ("This work", TRLS.lm_trust_region!),
+    ("LM-QR-scaled", TRLS.lm_trust_region!),
+    ("LM-QRChol", TRLS.lm_trust_region!),
     ("LsqFit-LM", nothing),  # Special handling in test_solver_on_problem
     ("JSO-TRON", tron),
     ("Scipy-LeastSquares", nothing),  # Special handling in test_solver_on_problem

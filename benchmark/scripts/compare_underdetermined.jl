@@ -11,7 +11,8 @@
 # overdetermined suite's 1e-4, which would accept stalls at ‖r‖ ≈ 0.01. JSO-TRON is
 # omitted: it consumes the NLSModel directly, not the cropped closures.
 include(joinpath(@__DIR__, "..", "harness.jl"))
-using NonlinearSolve, DataFrames, nonlinearlstr, LsqFit
+using NonlinearSolve, DataFrames, LsqFit
+import TrustRegionLeastSquares as TRLS
 const CROP_RATIO = parse(Float64, get(ENV, "CROP_RATIO", "0.5"))
 const MAX_VARS = parse(Int, get(ENV, "MAX_VARS", "999"))
 const PROBLEM_LIMIT = parse(Int, get(ENV, "PROBLEM_LIMIT", "0"))  # 0 = no cap
@@ -24,8 +25,8 @@ end
 crop(pd) = crop_nls_functions(pd, clamp(ceil(Int, CROP_RATIO * pd.m), 1, pd.m - 1))
 
 solvers = [
-    ("This work", nonlinearlstr.lm_trust_region!),
-    ("LM-QR-scaled", nonlinearlstr.lm_trust_region!),
+    ("This work", TRLS.lm_trust_region!),
+    ("LM-QR-scaled", TRLS.lm_trust_region!),
     ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),
     ("NonlinearSolve-GNBK", () -> NonlinearSolve.GaussNewton(linesearch = BackTracking())),
