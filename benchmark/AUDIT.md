@@ -34,16 +34,20 @@ not against documentation.
 | 5 | Tolerances were mixed per class (gradient 1e-6, others 1e-8). | **Uniform 1e-8 on every exposed tolerance** (decision below). |
 | 6 | Single-step `x_tol` criteria fire on slow crawl without optimality evidence; "This work" has no such test. | Disabled where single-step: SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`. Kept where structural: NonlinearSolve stall (32 *consecutive* steps; only exit at nonzero residual), PRIMA `rhoend` (DFO resolution parameter). |
 
-### Deferred (bounded script only — fix before `compare_bounded.jl` ships)
+### Resolved with the bounded solver (2026-09-11)
 
-- `dispatch.jl` Scipy-LSMR: the `@be` timing call omits `tr_solver = "lsmr"` — it times
-  the default TRF configuration against LSMR's solution.
+- `dispatch.jl` Scipy-LSMR: the `@be` timing call omitted `tr_solver = "lsmr"`, timing the
+  default TRF configuration against LSMR's solution. Added.
 - `dispatch.jl` NonlinearSolve bounds heuristic `any(lb .> -1e-30) || any(ub .< 1e30)`
-  silently drops bounds for e.g. `lb = -5, ub = Inf`; should test `isfinite`. Compounded
-  by `is_success` not checking `bounds_satisfied`, an unconstrained interloper can set an
-  unreachable `min_solution` for the whole problem.
-- `run.jl` stores `nvars = prob_data.n` (residual count) and `nresiduals = prob_data.m`
-  (variable count) — swapped in the CSVs (not plotted anywhere).
+  silently dropped bounds for e.g. `lb = -5, ub = Inf`; now `any(isfinite, lb) || any(isfinite, ub)`.
+  The compounding issue — an unconstrained interloper setting an unreachable `min_solution` for the
+  whole problem — is closed in `evaluate.jl`: `compare_with_best` now maps the cost of any solve
+  that violates its bounds to `Inf` before taking the per-problem minimum.
+- `dispatch.jl` strategy dispatch tested `contains(solver_name, "LQ")` before `"LQChol"`, so every
+  `LM-LQChol` row was in fact produced by `LQStrategy`. The chain now tests `LQChol` first, which
+  means LQChol columns in results produced before this date are mislabelled LQ columns.
+- `run.jl` stored `nvars`/`nresiduals` swapped. Correct in `run.jl`; `hard_luksan.jl` carried the
+  same swap and is fixed too.
 
 ## The termination-criteria decision
 
@@ -63,8 +67,8 @@ sources:
 - Consequently `NormTerminationMode` ("both tolerances") is residual-only in both
   branches and has **no stall exit** — it would strand the 30 nonzero-residual problems
   at `maxiters`. SafeBest + `abstol = 1e-8` is the correct NLLS configuration.
-- **Empirically confirmed** by `benchmark/scripts/mwe_nonlinearsolve_stall.jl`
-  (self-contained; deps NLSProblems + NLPModels + NonlinearSolve): 62 LM/TR solves on
+- **Empirically confirmed** by a since-removed scratch script (self-contained; deps
+  NLSProblems + NLPModels + NonlinearSolve): 62 LM/TR solves on
   31 nonzero-residual problems → **0× `Success`**, 45× `StalledSuccess`, 17× `MaxIters`,
   with 48/62 at stationary points (`‖J'F‖ < 1e-4`); zero-residual problems get
   `Success` 105/114 times. Fully converged runs (e.g. mgh23-LM, `‖J'F‖ = 5.8e-8`)

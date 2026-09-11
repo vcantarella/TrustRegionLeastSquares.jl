@@ -10,7 +10,25 @@ results_dir = normpath(joinpath(@__DIR__, "..", "results"))
 for (csvname, figname, legend, atol) in [
     ("nlls_results.csv", "nlls_solver_performance", true, 1e-4),
     ("nlls_results_delay.csv", "nlls_solver_performance_delay", false, 1e-4),
-    ("nlls_results_underdetermined.csv", "nlls_solver_performance_underdetermined", true, 1e-12),
+    (
+        "nlls_results_underdetermined.csv",
+        "nlls_solver_performance_underdetermined",
+        true,
+        1e-12,
+    ),
+    (
+        "nlls_results_internal_overdetermined.csv",
+        "nonlinearlstr_internal_overdetermined",
+        true,
+        1e-4,
+    ),
+    (
+        "nlls_results_internal_underdetermined.csv",
+        "nonlinearlstr_internal_underdetermined",
+        true,
+        1e-4,
+    ),
+    ("nlls_results_bounded.csv", "bounded_solver_performance", true, 1e-4),
 ]
     path = joinpath(results_dir, csvname)
     if !isfile(path)

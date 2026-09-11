@@ -31,8 +31,11 @@ solvers = [
     ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),
     ("NonlinearSolve-GNBK", () -> NonlinearSolve.GaussNewton(linesearch = BackTracking())),
-    ("NonlinearSolve-GNLF", () -> NonlinearSolve.GaussNewton(linesearch = LiFukushimaLineSearch())),
-    
+    (
+        "NonlinearSolve-GNLF",
+        () -> NonlinearSolve.GaussNewton(linesearch = LiFukushimaLineSearch()),
+    ),
+
 
     # JSOSolvers (Best: TRON)
     ("JSO-TRON", tron),

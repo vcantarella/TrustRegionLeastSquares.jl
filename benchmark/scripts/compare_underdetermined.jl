@@ -29,7 +29,10 @@ solvers = [
     ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),
     ("NonlinearSolve-GNBK", () -> NonlinearSolve.GaussNewton(linesearch = BackTracking())),
-    ("NonlinearSolve-GNLF", () -> NonlinearSolve.GaussNewton(linesearch = LiFukushimaLineSearch())),
+    (
+        "NonlinearSolve-GNLF",
+        () -> NonlinearSolve.GaussNewton(linesearch = LiFukushimaLineSearch()),
+    ),
     ("LSO-Levenberg-QR", LeastSquaresOptim.LevenbergMarquardt(LeastSquaresOptim.QR())),
     ("Scipy-LeastSquares", nothing),
     ("NLLSsolver-LM", NLLSsolver.levenbergmarquardt),

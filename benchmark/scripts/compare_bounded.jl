@@ -5,8 +5,8 @@ using ADNLPModels
 using JSOSolvers
 using PRIMA
 using NonlinearSolve
-using Revise
-using DataFrames
+using DataFrames, CSV
+using LsqFit
 using nonlinearlstr
 using Test
 
@@ -26,7 +26,10 @@ custom_problems = nameof.(get_custom_problems())   # all 15 ADNLSModel construct
 append!(nls_problems, custom_problems)
 # 2. Define solvers
 solvers = [
-    ("TRF", nonlinearlstr.lm_trust_region_reflective),
+    ("This work", nonlinearlstr.lm_trust_region!),
+    ("LM-QR-scaled", nonlinearlstr.lm_trust_region!),
+    ("LM-QRChol", nonlinearlstr.lm_trust_region!),
+    ("LsqFit-LM", nothing),  # Special handling in test_solver_on_problem
     ("JSO-TRON", tron),
     ("Scipy-LeastSquares", nothing),  # Special handling in test_solver_on_problem
     ("Scipy-LSMR", nothing),  # Special handling in test_solver_on_problem
@@ -44,6 +47,10 @@ nls_results = nlls_benchmark(nls_problems, solvers, max_iter = 450)
 
 # 4. Analyze results
 df_nls = DataFrame(nls_results)
+CSV.write(
+    joinpath(@__DIR__, "..", "results", "nlls_results_bounded.csv"),
+    select(df_nls, Not(:x_opt)),
+)
 
 include(joinpath(@__DIR__, "..", "evaluate.jl"))
 
@@ -57,13 +64,9 @@ display(summary_nls)
 
 # 5. Tests
 @testset "Bounded Solver Performance" begin
-    # Check that TRF has a reasonable success rate (e.g., > 80% relative to best)
-    # Note: Success definition in compare_with_best is being close to the best found solution
-
-    trf_success = summary_nls[summary_nls.solver .== "TRF", :percentage_success]
-    if !isempty(trf_success)
-        @test trf_success[1] > 0.7
-    end
+    # Success = close to the best cost found by any solver (compare_with_best), bounds respected.
+    success = summary_nls[summary_nls.solver .== "This work", :percentage_success]
+    @test success[1] > 0.7
 end
 
 # 6. Detailed Failure Analysis (Optional, printed to console)

@@ -27,6 +27,8 @@ end
 function compare_with_best(df::DataFrame; atol = 1e-4)
     # Use standard DataFrames - no macro BS
     df_proc = copy(df)
+    # A solve that violates its bounds cannot set the reference minimum for the others.
+    df_proc.final_cost = ifelse.(df_proc.bounds_satisfied, df_proc.final_cost, Inf)
 
     # Find minimum (best) solution for each problem, ignoring failed/NaN runs.
     min_solutions =

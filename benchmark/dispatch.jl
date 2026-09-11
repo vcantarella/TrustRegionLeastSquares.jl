@@ -43,91 +43,42 @@ end
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
-        if solver_name in [
-            "This work",   # poster label for LM-QR
-            "LM-QR",
-            "LM-QR-scaled",
-            "LM-SVD",
-            "LM-QR-Recursive",
-            "LM-QR-Recursive-Scaled",
-            "LM-QR-Scaled",
-            "LM-VCChol",
-        ]
-            # Use residual-Jacobian interface
-            if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
-                scaling_strategy = nonlinearlstr.JacobianScaling()
-            else
-                scaling_strategy = nonlinearlstr.NoScaling()
-            end
-            if contains(solver_name, "Recursive")
-                subproblem_strategy = nonlinearlstr.QRrecursiveSolve()
-            elseif contains(solver_name, "QR") || solver_name == "This work"
-                subproblem_strategy = nonlinearlstr.QRSolve()
-            elseif contains(solver_name, "SVD")
-                subproblem_strategy = nonlinearlstr.SVDSolve()
-            else #EVDsolve
-                subproblem_strategy = nonlinearlstr.QRCholStrategy()
-            end
-
-            result = solver_func(
+        if solver_name == "This work" || startswith(solver_name, "LM-")
+            # nonlinearlstr. The label picks the variant: "This work" / "LM-QR" -> QRStrategy,
+            # "LM-QRChol" -> QRCholStrategy, "LM-LQ" / "LM-LQChol" -> the LQ family (residuals <=
+            # variables only); a "-scaled" suffix switches on JacobianScaling. Bounds are always
+            # passed: infinite bounds take the unconstrained path, finite ones the projected step.
+            scaling_strategy =
+                contains(lowercase(solver_name), "scaled") ?
+                nonlinearlstr.JacobianScaling() : nonlinearlstr.NoScaling()
+            subproblem_strategy =
+                contains(solver_name, "LQChol") ? nonlinearlstr.LQCholStrategy() :
+                contains(solver_name, "QRChol") ? nonlinearlstr.QRCholStrategy() :
+                contains(solver_name, "LQ") ? nonlinearlstr.LQStrategy() :
+                nonlinearlstr.QRStrategy()
+            solve_once() = solver_func(
                 prob_data.residual_func!,
                 prob_data.jacobian_func!,
                 prob_data.x0,
                 prob_data.n,
                 subproblem_strategy,
                 scaling_strategy;
-                max_iter = max_iter,
-                gtol = 1e-8,
-                ftol = 1e-8,
-            )
-            #run one more time for timing:
-
-            t = minimum(
-                @be solver_func(
-                    prob_data.residual_func!,
-                    prob_data.jacobian_func!,
-                    prob_data.x0,
-                    prob_data.n,
-                    subproblem_strategy,
-                    scaling_strategy;
-                    max_iter = max_iter,
-                    gtol = 1e-8,
-                    ftol = 1e-8,
-                )
-            ).time
-
-            x_opt, r_opt, g_opt, iterations = result
-            final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-8
-        elseif solver_name in ["TRF", "TRF-scaled"]
-            scaling_strategy = nonlinearlstr.ColemanandLiScaling()
-
-            result = solver_func(
-                prob_data.residual_func,
-                prob_data.jacobian_func,
-                prob_data.x0;
                 lb = prob_data.bl,
                 ub = prob_data.bu,
                 max_iter = max_iter,
                 gtol = 1e-8,
+                ftol = 1e-8,
             )
-            #run one more time for timing:
-
-            t = minimum(
-                @be solver_func(
-                    prob_data.residual_func,
-                    prob_data.jacobian_func,
-                    prob_data.x0;
-                    lb = prob_data.bl,
-                    ub = prob_data.bu,
-                    max_iter = max_iter,
-                    gtol = 1e-8,
-                )
-            ).time
-
-            x_opt, r_opt, g_opt, iterations = result
+            x_opt, r_opt, g_opt, iterations = solve_once()
+            t = minimum(@be solve_once()).time
             final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-8
+            converged =
+                nonlinearlstr.projected_gradient_norm(
+                    g_opt,
+                    x_opt,
+                    prob_data.bl,
+                    prob_data.bu,
+                ) < 1e-8
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"
@@ -184,7 +135,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             lb = prob_data.bl
             ub = prob_data.bu
-            if any(lb .> -1e-30) || any(ub .< 1e30)
+            if any(isfinite, lb) || any(isfinite, ub)
                 prob_nl = NonlinearLeastSquaresProblem(
                     nl_func,
                     copy(prob_data.x0);
@@ -340,6 +291,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     copy(prob_data.x0),
                     jac = prob_data.jacobian_func,
                     bounds = (prob_data.bl, prob_data.bu),
+                    tr_solver = "lsmr",
                     xtol = nothing,
                     gtol = 1e-8,
                     max_nfev = 1000,
