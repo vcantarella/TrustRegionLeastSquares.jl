@@ -230,10 +230,48 @@ To simulate a realistic model — where each Jacobian evaluation means re-solvin
 
 This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
 
-#### Bound-constrained problems (IN PROGRESS)
+#### Bound-constrained problems
 
 ![Bounded solver performance](docs/src/assets/benchmarks/bounded_solver_performance.png)
-*Figure 3: Performance profile on bound-constrained NLLS problems.*
+*Figure 3: Performance profile on 71 bound-constrained problems: CUTEst NLS problems (whose
+residuals are encoded as constraints), the bound-constrained NLSProblems set, and 15 hand-written
+`ADNLSModel` problems with a mix of active and inactive bounds. TRLS leads on success rate and is an
+order of magnitude ahead of SciPy on cumulative time.*
+
+| Solver | Success % | Median iterations | Cumulative time |
+|---|---|---|---|
+| **TRLS** | **84.5** | 18.0 | 0.081 s |
+| LM-QR-scaled | 83.1 | 16.0 | 0.067 s |
+| LM-QRChol | 83.1 | 18.0 | 0.048 s |
+| Scipy-LeastSquares | 81.7 | 18.0 | 0.853 s |
+| Scipy-LSMR | 69.0 | 17.0 | 3.267 s |
+| LsqFit-LM | 64.8 | not exposed | 0.318 s |
+| LSO-Levenberg-QR | 63.4 | 35.0 | 0.041 s |
+| PRIMA-BOBYQA | 62.0 | 204 (nf) | 2.770 s |
+| JSO-TRON | 29.6 | 21.0 | 0.477 s |
+| NonlinearSolve-PolyAlg | 16.9 | 1449.5 | 0.743 s |
+| NonlinearSolve-TrustRegion | 8.5 | 33.5 | 0.0004 s |
+| NonlinearSolve-GaussNewton | 7.0 | 450.0 | 0.006 s |
+| NonlinearSolve-LevenbergMarquardt | 1.4 | 450.0 | 0.002 s |
+
+Three things to read carefully before citing the low rows:
+
+- **No solver violated its bounds** on any problem, so none of these rates is a feasibility penalty.
+- **JSO-TRON's 29.6% measures harness compatibility, not the algorithm.** TRON consumes the
+  `NLPModels` model directly rather than the extracted residual/Jacobian closures the others get, and
+  it refuses any model carrying general constraints: it declines 47 of the 71 problems outright with
+  *"tron should only be called for unconstrained or bound-constrained problems"*, because the CUTEst
+  problems encode their residuals as constraints. On the 24 it accepts it is competitive. Fixing this
+  means building a genuinely bound-constrained NLS model out of the CUTEst encoding, which the
+  harness does not yet do.
+- **NonlinearSolve's low rates are not crashes.** It ran every problem and returned; its median
+  iteration counts sit at or near the 450-iteration budget, so it is failing to converge within the
+  budget on these problems rather than erroring. Its bound-constrained path is much newer than its
+  unconstrained one.
+
+The two internal variants in the table (`LM-QR-scaled`, `LM-QRChol`) are there to show that the
+choice of factorization strategy barely matters on this set: all three sit within 1.4 points of each
+other. `internal_variants.jl` compares all eight strategy-and-scaling combinations properly.
 
 ## Status
 

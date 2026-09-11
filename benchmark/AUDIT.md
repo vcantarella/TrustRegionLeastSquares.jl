@@ -139,6 +139,36 @@ cumulative solve time fell from 0.495 s to 0.283 s, so the margin over SciPy wen
 The factorization-buffer reuse in the λ-iteration is the likely cause; competitors moved by less than
 a percentage point, as expected for untouched code.
 
+Bounded figure (71 bound-constrained problems, first run of the finished bounded solver):
+
+| Solver | Success % | Median iters (succ) | Total time (succ) |
+|---|---|---|---|
+| TRLS | **84.5** | 18.0 | 0.081 s |
+| LM-QR-scaled | 83.1 | 16.0 | 0.067 s |
+| LM-QRChol | 83.1 | 18.0 | 0.048 s |
+| Scipy-LeastSquares | 81.7 | 18.0 | 0.853 s |
+| Scipy-LSMR | 69.0 | 17.0 | 3.267 s |
+| LsqFit-LM | 64.8 | n/a | 0.318 s |
+| LSO-Levenberg-QR | 63.4 | 35.0 | 0.041 s |
+| PRIMA-BOBYQA | 62.0 | 204 (nf) | 2.770 s |
+| JSO-TRON | 29.6 | 21.0 | 0.477 s |
+| NonlinearSolve-PolyAlg | 16.9 | 1449.5 | 0.743 s |
+| NonlinearSolve-TrustRegion | 8.5 | 33.5 | 0.0004 s |
+| NonlinearSolve-GaussNewton | 7.0 | 450.0 | 0.006 s |
+| NonlinearSolve-LevenbergMarquardt | 1.4 | 450.0 | 0.002 s |
+
+Two caveats, both recorded in the README caption:
+
+- **No solver violated its bounds** on any of the 71 problems, so the `bounds_satisfied` scoring fix
+  added on 2026-09-11 changed no result here. It remains the right scoring rule; it simply did not bind.
+- **JSO-TRON's rate is harness-limited, not algorithmic.** It consumes the NLPModel directly and
+  refuses any model with general constraints, declining 47 of 71 with *"tron should only be called for
+  unconstrained or bound-constrained problems"* — the CUTEst problems encode residuals as constraints.
+  **New deferred item:** build a genuinely bound-constrained NLS model from the CUTEst encoding so TRON
+  is measured on the algorithm. Until then do not quote TRON's bounded rate as a capability.
+- NonlinearSolve's low rates are non-convergence within the 450-iteration budget, not errors: zero
+  failed runs, medians at or near the cap.
+
 ### Historical: 2026-08-08 run
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
