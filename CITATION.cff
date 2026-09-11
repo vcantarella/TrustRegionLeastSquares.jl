@@ -1,4 +1,3 @@
-# Go to https://citation-file-format.github.io/cff-initializer-javascript/#/ to finish this
 cff-version: 1.2.0
 title: TrustRegionLeastSquares.jl
 message: >-
@@ -8,3 +7,23 @@ type: software
 authors:
   - given-names: vcantarella
     email: vcantarella@gmail.com
+repository-code: >-
+  https://github.com/vcantarella/TrustRegionLeastSquares.jl
+url: >-
+  https://vcantarella.github.io/TrustRegionLeastSquares.jl
+abstract: >-
+  A Levenberg-Marquardt trust-region solver for nonlinear
+  least squares in Julia, with box constraints via a
+  projected step with a generalized Cauchy safeguard,
+  minimum-norm steps for underdetermined and rank-deficient
+  problems, and Moré's diagonal scaling for badly scaled
+  variables. Ships a reproducible benchmark suite comparing
+  it against other Julia and Python least-squares solvers.
+keywords:
+  - julia
+  - optimization
+  - nonlinear-least-squares
+  - levenberg-marquardt
+  - trust-region
+license: MIT
+version: 0.1.0

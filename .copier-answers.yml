@@ -1,6 +1,12 @@
-# Changes here will be overwritten by Copier
+# Changes here will be overwritten by Copier.
+#
+# The Add* flags are recorded explicitly even though BestieTemplate never asked them (StrategyLevel
+# supplies their defaults). Without them a later `BestieTemplate.update()` would re-derive them from
+# StrategyLevel = 3 and switch on the things deliberately left out: pre-commit, Lint.yml, the code of
+# conduct, all-contributors and the GitHub issue templates.
 Authors: vcantarella <vcantarella@gmail.com> and contributors
 JuliaMinVersion: '1.10'
+JuliaMinCIVersion: lts
 License: MIT
 LicenseCopyrightHolders: vcantarella
 PackageName: TrustRegionLeastSquares
@@ -9,4 +15,34 @@ PackageUUID: 21ca2098-f897-4540-9ab3-b13ed390dd37
 StrategyConfirmIncluded: false
 StrategyLevel: 3
 StrategyReviewExcluded: false
-_src_path: /Users/vcantarella/.julia/packages/BestieTemplate/MPEqY
+TestingStrategy: testitem_cli
+AddDocs: true
+AddTestCI: true
+AddDocsCI: true
+AddTagBotCI: true
+AddMacToCI: true
+AddWinToCI: true
+AddFormatterAndLinterConfigFiles: true
+AddChangelog: true
+AddCitationCFF: true
+AddDependabot: true
+GitHubActionVersionAutoUpdate: dependabot
+JuliaCompatAutoUpdate: dependabot
+JuliaIndentation: 4
+MarkdownIndentation: 2
+ConfigIndentation: 2
+AddAgentsMd: false
+AddAllcontributors: false
+AddCodeOfConduct: false
+AddContributionDocs: false
+AddCopierCI: false
+AddGitHubPRTemplate: false
+AddGitHubTemplates: false
+AddLintCI: false
+AddLychee: false
+AddPrecommit: false
+AddPrecommitUpdateCI: false
+AddVSCodeRecommendations: false
+CheckExplicitImports: false
+RunJuliaNightlyOnCI: false
+_src_path: https://github.com/JuliaBesties/BestieTemplate.jl
