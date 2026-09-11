@@ -1,21 +1,100 @@
-# TrustRegionLeastSquares.jl: An Experiment to Benchmark Nonlinear Least-Squares Solvers and Propose a Trust Region Alternative
+# TrustRegionLeastSquares.jl
 
-[![Build Status](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Build Status](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/vcantarella/TrustRegionLeastSquares.jl/actions/workflows/Test.yml?query=branch%3Amain)
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev)
+[![Coverage](https://codecov.io/gh/vcantarella/TrustRegionLeastSquares.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/vcantarella/TrustRegionLeastSquares.jl)
 
-This repository is two things:
+A Levenberg–Marquardt trust-region solver for nonlinear least squares in Julia, with support for
+box constraints, underdetermined problems and badly scaled variables. Pure Julia, one dependency
+(`LinearAlgebra`).
 
-1. **A reproducible benchmark suite** for Nonlinear Least-Squares (NLLS) solvers across the Julia and Python ecosystems, run on standard problem sets with per-solver fairness taken seriously.
-2. **A proposed trust-region Levenberg–Marquardt solver**, developed here and labeled *"TRLS"* in the benchmarks. Its design goal is robustness — solve every problem — while spending as few Jacobian evaluations as possible.
+It is built for the case where **evaluating the model is the expensive part** — the residual is an
+ODE solve, a PDE solve, a simulation — so the solver spends effort per iteration (exact trust-region
+subproblem solves, careful factorizations) to keep the number of Jacobian evaluations down. On the
+88-problem NLSProblems set it solves every problem, in a median of around a dozen iterations, and
+when each Jacobian costs 200 ms it leads the field. On microsecond-scale toy problems, lighter
+wrappers are faster per problem; that trade is deliberate and is documented in the benchmarks below.
 
-The headline finding: judged by raw wall-clock on small test problems, the proposed solver looks unremarkable — other codes finish individual problems faster. But it is one of only two solvers (with SciPy) that solves **100% of the problems**, and it does so in **few iterations**. When function/Jacobian evaluations are expensive — the situation in nearly every real-world fit, where the model is an ODE/PDE solve or a simulation — evaluation count dominates wall-clock, and the proposed solver moves to the front of the field.
+- **Unconstrained and box-constrained** least squares through one entry point.
+- **Four factorization strategies**, including minimum-norm steps for underdetermined problems.
+- **Moré's diagonal scaling** for variables that differ by orders of magnitude.
+- **A reproducible benchmark suite** comparing it against nine other solvers across the Julia and
+  Python ecosystems, with the fairness work written down rather than assumed.
 
-## The benchmark suite
+## Installation
+
+```julia
+using Pkg
+Pkg.add("TrustRegionLeastSquares")
+```
+
+## The solver
+
+- **Unconstrained NLLS**: Levenberg–Marquardt trust-region method, `min ‖J p + f‖` subject to `‖D p‖ ≤ Δ`, with the damping parameter found by safeguarded Newton iteration (Moré 1978).
+- **Bounded NLLS**: the trust-region step in the Coleman–Li affine-scaled norm, projected onto the box and safeguarded by a generalized Cauchy step (Macconi, Morini & Porcelli 2009). Iterates stay feasible and may rest on a bound; no active-set management.
+- **Four factorization strategies**: `QRCholStrategy` (pivoted QR for the Gauss–Newton step, Cholesky of `JᵀJ + λD²` for damped steps; the default), `QRStrategy` (QR of the augmented `[J; √λ D]`, stable at any conditioning), and `LQStrategy` / `LQCholStrategy` for underdetermined problems, which return the minimum-norm step via a complete orthogonal decomposition.
+- **Buffer reuse in the hot loop**: one factorization of `J` per iteration, reused across candidate `λ` values.
+
+### Usage
+
+The residual and Jacobian are **in-place**: `res!(f, x)` fills the residual vector, `jac!(J, x)` the Jacobian. The fourth argument is the number of residuals.
+
+```julia
+using TrustRegionLeastSquares
+
+# Rosenbrock as a least-squares problem: f = [10(x₂ - x₁²), 1 - x₁]
+rosenbrock!(f, x) = (f[1] = 10 * (x[2] - x[1]^2); f[2] = 1 - x[1]; f)
+rosenbrock_jac!(J, x) = (J[1, 1] = -20 * x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
+
+x, f, g, iter = lm_trust_region!(rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2)
+# x ≈ [1.0, 1.0]
+```
+
+A different factorization strategy and variable scaling are positional arguments:
+
+```julia
+x, f, g, iter = lm_trust_region!(
+    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2,
+    TrustRegionLeastSquares.QRStrategy(),        # subproblem strategy (default: QRCholStrategy())
+    TrustRegionLeastSquares.JacobianScaling(),   # variable scaling   (default: NoScaling())
+)
+```
+
+For box constraints, pass `lb` and `ub`. Here the upper bound on `x₁` moves the solution to `(0.5, 0.25)`, where `x₁` rests on its bound:
+
+```julia
+x, f, g, iter = lm_trust_region!(
+    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2;
+    lb = [-2.0, -2.0], ub = [0.5, 2.0],
+)
+# x ≈ [0.5, 0.25]
+```
+
+`lm_trust_region!` returns the solution, the residuals and gradient there, and the iteration count. See its docstring for the trust-region and tolerance keywords.
+
+### Methodology
+
+**Trust region framework.** At each iteration the algorithm minimizes a model of the objective `F(x) = 0.5 * ||f(x)||^2` around the current point:
+```math
+min_p  || J_k p + f_k ||^2  \quad \text{subject to} \quad || D_k p || \le \Delta_k
+```
+where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `Δ_k` the trust region radius.
+
+**Subproblem solution.** The constrained subproblem is equivalent to the regularized system
+```math
+(J_k^T J_k + \lambda D_k^T D_k) p = -J_k^T f_k
+```
+for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `ψ(λ) = 1/Δ - 1/‖Dp(λ)‖`. The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
+
+**Bounds (Coleman–Li scaling, projected step).** The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. This is the Macconi–Morini–Porcelli (2009) safeguard, and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
+
+## Benchmarks
 
 ### What is compared
 
 | Solver (label in figures) | Package | Method |
 |---|---|---|
-| TRLS | `TrustRegionLeastSquares.jl` v0.2 | LM trust region (QR) |
+| TRLS | `TrustRegionLeastSquares.jl` v0.1 | LM trust region, `QRStrategy` |
 | NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.20 | TrustRegion, LevenbergMarquardt |
 | JSO-TRON | JSOSolvers.jl v0.14 | TRON |
 | LSO-Levenberg-QR | LeastSquaresOptim.jl v0.8 | Levenberg–Marquardt (QR) |
@@ -26,6 +105,10 @@ The headline finding: judged by raw wall-clock on small test problems, the propo
 | Scipy-LeastSquares | SciPy 1.18 (Python 3.13, via PythonCall) | `least_squares` (TRF) — the **baseline** |
 
 Test problems come from **NLSProblems.jl** (via NLPModels.jl); CUTEst problems are supported by the same harness. Julia 1.12.
+
+The `TRLS` row runs the `QRStrategy` variant, which is what the figures show. The package default is
+`QRCholStrategy`, which is faster per iteration but squares the condition number; `internal_variants.jl`
+compares all four strategies against each other.
 
 ### Fairness
 
@@ -41,9 +124,9 @@ each solver terminates through whatever criteria it natively implements at that 
 
 | Criterion class | Who tests it (all at 1e-8) |
 |---|---|
-| First-order (gradient) | TRLS (`‖J'r‖₂`), SciPy `gtol` (∞-norm, scaled), Optim `g_tol` (∞-norm), LsqFit `g_tol`, TRON `atol` (projected gradient, `rtol=0`), LSO `g_tol` (∞-norm) |
+| First-order (gradient) | TRLS (projected gradient `‖x − P(x − g)‖₂`, which is `‖Jᵀr‖₂` when unbounded), SciPy `gtol` (∞-norm, scaled), Optim `g_tol` (∞-norm), LsqFit `g_tol`, TRON `atol` (projected gradient, `rtol=0`), LSO `g_tol` (∞-norm) |
 | Step size | **Disabled** where it is a single-step give-up test (SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`): one small step is the weakest evidence of optimality — it fires during slow crawls — and "this work" has no such test, so removing it keeps the criterion sets symmetric. Kept where structural: NonlinearSolve's stall detector (32 *consecutive* steps ≤ `abstol` — its only exit at nonzero residual) and PRIMA's `rhoend` (a DFO method's resolution parameter) |
-| Cost stagnation | TRLS `ftol`, SciPy `ftol`, LSO `f_tol`, NLLSsolver `reldcost` |
+| Cost stagnation | TRLS `ftol` (relative: reduction against the cost itself), SciPy `ftol`, LSO `f_tol`, NLLSsolver `reldcost` |
 | Residual norm | NonlinearSolve `abstol` (on `‖r‖₂`) |
 | Trust-region resolution | PRIMA `rhoend` (the x-resolution of a derivative-free method) |
 
@@ -112,16 +195,16 @@ julia --project=benchmark benchmark/scripts/plot_results.jl
 
 Both benchmark scripts accept `MAX_VARS` and `PROBLEM_LIMIT` environment variables for quick capped runs (e.g. `PROBLEM_LIMIT=5 julia --project=benchmark ...`). Plotting is deliberately decoupled from benchmarking: figure styling can be iterated without re-running solvers. Additional scripts cover bound-constrained problems (`compare_bounded.jl`) and internal subproblem-strategy comparisons (`internal_variants.jl`).
 
-## Results
+### Results
 
-### Standard benchmark: cheap evaluations
+#### Standard benchmark: cheap evaluations
 
 ![NLLS solver performance](docs/src/assets/benchmarks/nlls_solver_performance.png)
 *Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). "TRLS" and SciPy are the only solvers with a 100% success rate; "TRLS" is 2.7× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
 
 On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile. The proposed solver's per-iteration cost (careful factorizations, exact subproblem solves) buys something different: it converges on **every** problem, in a median of ~13 iterations.
 
-### Real-world benchmark: expensive evaluations
+#### Real-world benchmark: expensive evaluations
 
 To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient J′r requires the Jacobian, so gradient-based solvers must pay it too).
 
@@ -130,78 +213,15 @@ To simulate a realistic model — where each Jacobian evaluation means re-solvin
 
 This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
 
-### Bound-constrained problems (IN PROGRESS)
+#### Bound-constrained problems (IN PROGRESS)
 
 ![Bounded solver performance](docs/src/assets/benchmarks/bounded_solver_performance.png)
 *Figure 3: Performance profile on bound-constrained NLLS problems.*
 
-## The proposed solver
-
-- **Unconstrained NLLS**: Levenberg–Marquardt trust-region method, `min ‖J p + f‖` subject to `‖D p‖ ≤ Δ`, with the damping parameter found by safeguarded Newton iteration (Moré 1978).
-- **Bounded NLLS**: the trust-region step in the Coleman–Li affine-scaled norm, projected onto the box and safeguarded by a generalized Cauchy step (Macconi, Morini & Porcelli 2009). Iterates stay feasible and may rest on a bound; no active-set management.
-- **Four factorization strategies**: `QRCholStrategy` (pivoted QR for the Gauss–Newton step, Cholesky of `JᵀJ + λD²` for damped steps; the default), `QRStrategy` (QR of the augmented `[J; √λ D]`, stable at any conditioning), and `LQStrategy` / `LQCholStrategy` for underdetermined problems, which return the minimum-norm step via a complete orthogonal decomposition.
-- **Buffer reuse in the hot loop**: one factorization of `J` per iteration, reused across candidate `λ` values.
-
-### Usage
-
-The residual and Jacobian are **in-place**: `res!(f, x)` fills the residual vector, `jac!(J, x)` the Jacobian. The fourth argument is the number of residuals.
-
-```julia
-using TrustRegionLeastSquares
-
-# Rosenbrock as a least-squares problem: f = [10(x₂ - x₁²), 1 - x₁]
-rosenbrock!(f, x) = (f[1] = 10 * (x[2] - x[1]^2); f[2] = 1 - x[1]; f)
-rosenbrock_jac!(J, x) = (J[1, 1] = -20 * x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
-
-x, f, g, iter = lm_trust_region!(rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2)
-# x ≈ [1.0, 1.0]
-```
-
-A different factorization strategy and variable scaling are positional arguments:
-
-```julia
-x, f, g, iter = lm_trust_region!(
-    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2,
-    TrustRegionLeastSquares.QRStrategy(),        # subproblem strategy (default: QRCholStrategy())
-    TrustRegionLeastSquares.JacobianScaling(),   # variable scaling   (default: NoScaling())
-)
-```
-
-For box constraints, pass `lb` and `ub`. Here the upper bound on `x₁` moves the solution to `(0.5, 0.25)`, where `x₁` rests on its bound:
-
-```julia
-x, f, g, iter = lm_trust_region!(
-    rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2;
-    lb = [-2.0, -2.0], ub = [0.5, 2.0],
-)
-# x ≈ [0.5, 0.25]
-```
-
-`lm_trust_region!` returns the solution, the residuals and gradient there, and the iteration count. See its docstring for the trust-region and tolerance keywords.
-
-### Methodology
-
-**Trust region framework.** At each iteration the algorithm minimizes a model of the objective `F(x) = 0.5 * ||f(x)||^2` around the current point:
-```math
-min_p  || J_k p + f_k ||^2  \quad \text{subject to} \quad || D_k p || \le \Delta_k
-```
-where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `Δ_k` the trust region radius.
-
-**Subproblem solution.** The constrained subproblem is equivalent to the regularized system
-```math
-(J_k^T J_k + \lambda D_k^T D_k) p = -J_k^T f_k
-```
-for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `ψ(λ) = 1/Δ - 1/‖Dp(λ)‖`. The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
-
-**Bounds (Coleman–Li scaling, projected step).** The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. This is the Macconi–Morini–Porcelli (2009) safeguard, and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
-
-## Installation
-
-```julia
-using Pkg
-Pkg.add(url="https://github.com/vcantarella/TrustRegionLeastSquares.jl")
-```
-
 ## Status
 
-In development. The benchmark suite is intended as a reproducible reference for comparing NLLS implementations; the solver as a robust reference implementation of trust-region methods in Julia.
+In development, but the solver API is stable and tested: 562 unit tests across every strategy,
+scaling and bound configuration, on Julia LTS and latest. The benchmark suite is intended as a
+reproducible reference for comparing NLLS implementations.
+
+If you use this package in work you publish, see `CITATION.cff`.
