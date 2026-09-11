@@ -15,8 +15,8 @@ struct QRCholStrategy <: Strategy end
     QRStrategy()
 
 Gauss–Newton step from a column-pivoted QR of `J`; damped steps from a QR of the augmented
-matrix `[J; √λ D]` (Moré 1978). Numerically stable for any `cond(J)`. This is the variant
-labelled "This work" in the benchmarks.
+matrix `[J; √λ D]` (Moré 1978). Numerically stable for any `cond(J)`. This is the variant the
+benchmarks report as `TRLS`.
 """
 struct QRStrategy <: Strategy end
 
