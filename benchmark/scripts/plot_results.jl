@@ -14,7 +14,7 @@ for (csvname, figname, legend, atol) in [
         "nlls_results_underdetermined.csv",
         "nlls_solver_performance_underdetermined",
         true,
-        1e-12,
+        1e-8,
     ),
     (
         "nlls_results_internal_overdetermined.csv",

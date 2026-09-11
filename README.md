@@ -230,6 +230,41 @@ To simulate a realistic model — where each Jacobian evaluation means re-solvin
 
 This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
 
+#### Underdetermined problems
+
+Every problem in the unconstrained set, with residual rows cropped so there are fewer equations than
+unknowns (`crop_nls_functions`). Each cropped problem has a zero-residual solution, generically a
+whole manifold of them, so the interesting question is not only whether a solver lands on the
+manifold but how far it travels to get there: a minimum-norm method stays near `x0`.
+
+| Solver | Success % | Median iterations | Cumulative time | Median ‖x*-x0‖ |
+|---|---|---|---|---|
+| LM-QR-scaled | **100.0** | 4.0 | 0.022 s | 2.200 |
+| **TRLS** | **100.0** | 4.0 | 0.052 s | 2.193 |
+| NonlinearSolve-TR | **100.0** | 6.0 | 0.032 s | 2.190 |
+| Scipy-LeastSquares | **100.0** | 16.0 | 0.833 s | 2.200 |
+| NonlinearSolve-GNBK | 98.9 | 5.0 | 0.048 s | 2.200 |
+| Optim-BFGS | 98.9 | 13.0 | 0.076 s | 2.200 |
+| Optim-L-BFGS | 97.7 | 15.5 | 0.032 s | 2.200 |
+| NonlinearSolve-GNLF | 96.6 | 5.0 | 0.021 s | 2.200 |
+| NLLSsolver-LM | 96.6 | 6.0 | 0.019 s | 2.190 |
+| NonlinearSolve-LM | 95.5 | 9.0 | 0.022 s | 2.035 |
+| LSO-Levenberg-QR | 86.4 | 6.5 | 0.038 s | 2.200 |
+| LsqFit-LM | 83.0 | not exposed | 0.027 s | 2.200 |
+
+**A note on the threshold, because it changes the ranking completely.** This suite used to score
+success at `1e-12` absolute on the cost, which is four orders of magnitude tighter than the `1e-8`
+every solver is configured with. At `1e-12` TRLS scored 59%, SciPy 91% and Optim-BFGS 86% — all of
+them stopping where they were told to while others happened to keep polishing. A success threshold
+tighter than the configured stopping tolerance measures the threshold, not the solver, so it is now
+`1e-8`, matching the rest of the suite. Both sets of numbers are in `benchmark/AUDIT.md`.
+
+The strategy that is actually designed for this case is the LQ family, which returns the
+minimum-norm step through a complete orthogonal decomposition. `internal_variants.jl` scores it
+separately: `LM-LQ` reaches 100% with the highest min-norm rate (0.97 of problems within 1e-3 of the
+smallest `‖x*-x0‖` any variant found), and `JacobianScaling` measurably hurts there, dropping the
+rate to 0.80 — scaling pulls the step away from the minimum-norm direction.
+
 #### Bound-constrained problems
 
 ![Bounded solver performance](docs/src/assets/benchmarks/bounded_solver_performance.png)

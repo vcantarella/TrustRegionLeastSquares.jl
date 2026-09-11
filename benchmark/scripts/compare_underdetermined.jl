@@ -16,7 +16,15 @@ import TrustRegionLeastSquares as TRLS
 const CROP_RATIO = parse(Float64, get(ENV, "CROP_RATIO", "0.5"))
 const MAX_VARS = parse(Int, get(ENV, "MAX_VARS", "999"))
 const PROBLEM_LIMIT = parse(Int, get(ENV, "PROBLEM_LIMIT", "0"))  # 0 = no cap
-const COST_ATOL = 1e-12   # ‖r‖ ≲ 1.4e-6: solved the system, as opposed to stalled
+# Success threshold on the cost. It must not be tighter than the tolerance every solver is
+# configured with (dispatch.jl sets every exposed tolerance to 1e-8), or the metric measures the
+# threshold rather than the solver: a solver that stops at cost 1e-9 because it was told to stop at
+# 1e-8 is obeying instructions. At the previous 1e-12 this suite scored TRLS at 59%, SciPy at 91%
+# and Optim-BFGS at 86%, all of them stopping where configured while the others happened to keep
+# polishing; at 1e-8 TRLS, NonlinearSolve-TR and SciPy all reach 100% and the comparison falls to
+# iterations, time and the min-norm distance, which is what this suite is for. 1e-8 on the cost is
+# ‖r‖ ≲ 1.4e-4 on a problem whose optimum is exactly 0.
+const COST_ATOL = 1e-8
 let probs = find_nlls_problems(MAX_VARS)
     global nls_problems = PROBLEM_LIMIT > 0 ? probs[1:min(PROBLEM_LIMIT, end)] : probs
 end

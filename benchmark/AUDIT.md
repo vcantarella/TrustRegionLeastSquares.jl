@@ -169,6 +169,36 @@ Two caveats, both recorded in the README caption:
 - NonlinearSolve's low rates are non-convergence within the 450-iteration budget, not errors: zero
   failed runs, medians at or near the cap.
 
+Underdetermined figure (88 problems, residual rows cropped). **Finding #7, new on 2026-09-11:** this
+suite scored success at `atol = 1e-12` on the cost while `dispatch.jl` configures every exposed
+tolerance to `1e-8`. A threshold four orders of magnitude tighter than the configured stopping
+tolerance measures the threshold, not the solver — and it penalised several solvers for stopping
+exactly where told. `COST_ATOL` is now `1e-8`; both scorings are below so nothing is hidden.
+
+| Solver | Success @ 1e-12 (old) | Success @ 1e-8 (now) | Median iters | Total time | Median ‖x*-x0‖ |
+|---|---|---|---|---|---|
+| TRLS | 59.1 | **100.0** | 4.0 | 0.052 s | 2.193 |
+| LM-QR-scaled | 56.8 | **100.0** | 4.0 | 0.022 s | 2.200 |
+| NonlinearSolve-TR | 98.9 | **100.0** | 6.0 | 0.032 s | 2.190 |
+| Scipy-LeastSquares | 90.9 | **100.0** | 16.0 | 0.833 s | 2.200 |
+| NonlinearSolve-GNBK | 97.7 | 98.9 | 5.0 | 0.048 s | 2.200 |
+| Optim-BFGS | 86.4 | 98.9 | 13.0 | 0.076 s | 2.200 |
+| Optim-L-BFGS | 89.8 | 97.7 | 15.5 | 0.032 s | 2.200 |
+| NonlinearSolve-GNLF | 96.6 | 96.6 | 5.0 | 0.021 s | 2.200 |
+| NLLSsolver-LM | 96.6 | 96.6 | 6.0 | 0.019 s | 2.190 |
+| NonlinearSolve-LM | 95.5 | 95.5 | 9.0 | 0.022 s | 2.035 |
+| LSO-Levenberg-QR | 86.4 | 86.4 | 6.5 | 0.038 s | 2.200 |
+| LsqFit-LM | 81.8 | 83.0 | n/a | 0.027 s | 2.200 |
+
+The solvers that moved are exactly the ones with a cost-based stopping test; those that stop on the
+residual norm or the gradient (NLLSsolver, NonlinearSolve-GNLF, LSO) are unchanged, which is the
+signature of a threshold artifact rather than a capability difference. Cross-check: at `1e-4`, the
+tolerance the overdetermined suite uses, the ranking is identical to `1e-8`.
+
+Note that `TRLS` and `LM-QR-scaled` here are QR strategies, not the LQ family that actually computes
+minimum-norm steps; `internal_variants.jl` scores those, where `LM-LQ` leads on min-norm rate at 0.97
+against 0.80 for the scaled variants.
+
 ### Historical: 2026-08-08 run
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
