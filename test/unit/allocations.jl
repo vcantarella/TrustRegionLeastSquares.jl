@@ -5,9 +5,11 @@ isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
 # small temporaries for readability, and every LAPACK Q product allocates its workspace. The
 # ceilings are ~3× the numbers measured on Julia 1.12 / macOS; they only fire on something like a
 # dense per-iteration matrix copy sneaking into the hot loop.
-# Roughly 3x the values measured on Julia 1.12 / macOS aarch64 (worst case: 170 KB for a
-# subproblem solve, 54 KB per solver iteration). Most of that floor is LAPACK's own workspace:
-# every Q product or pivoted-QR solve allocates ~50 KB that no amount of buffer reuse removes.
+# Roughly 3x the values measured on Julia 1.12 / macOS aarch64 (worst case on these shapes: 145 KB
+# for a subproblem solve, 52 KB per solver iteration). The λ-iteration assembles its damped system
+# into cache buffers and factorizes in place, so nothing there scales with the problem; what is left
+# is LAPACK's own workspace, ~50 KB per Q product or pivoted-QR solve, which buffer reuse cannot
+# remove. benchmark/scripts/allocations.jl measures the same thing across larger shapes.
 const SUBPROBLEM_CEIL = 500_000     # bytes, one solve_subproblem call
 const ITERATION_CEIL = 160_000      # bytes per iteration of lm_trust_region!
 

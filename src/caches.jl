@@ -39,71 +39,175 @@ struct LQCholStrategy <: Strategy end
 
 abstract type SolverCache end
 
-"""
-    QRCache(strategy, scaling, J)
+# Every cache owns the factorization of `J` (or `Jᵀ`), refreshed in place on each accepted step, the
+# scaling matrix `D`, the step `p` with its products, and the buffer the damped system of the
+# λ-iteration is assembled and factorized in. Nothing in the λ-iteration allocates a matrix: the
+# damped system is written into that buffer and factorized in place, which is why each strategy has
+# its own cache rather than one shared type with unused fields.
 
-Workspace for `QRStrategy` / `QRCholStrategy`: the pivoted QR of `J` (refreshed in place on every
-accepted step), the scaling matrix `D`, and the step `p` with its products.
 """
-mutable struct QRCache{S<:Strategy,F,T} <: SolverCache
+    QRCholCache(scaling, J)
+
+Workspace for [`QRCholStrategy`](@ref). `JᵀJ` depends only on `J`, so it is formed once per accepted
+step; `damped` receives `JᵀJ + λD²` and then its Cholesky factor on every λ-iteration.
+"""
+mutable struct QRCholCache{F,T} <: SolverCache
     factorization::F                         # qr(J, ColumnNorm())
     scaling_matrix::Diagonal{T,Vector{T}}    # D
+    JᵀJ::Matrix{T}
+    damped::Matrix{T}                        # JᵀJ + λD², overwritten by its Cholesky factor
     p::Vector{T}                             # step (cols)
     Dp::Vector{T}
+    D²p::Vector{T}
     q::Vector{T}                             # workspace for dϕ/dλ (cols)
+    Jᵀf::Vector{T}
     Jp::Vector{T}                            # (rows)
 end
-function QRCache(::S, scaling::ScalingStrategy, J::AbstractMatrix{T}) where {S<:Strategy,T}
+function QRCholCache(scaling::ScalingStrategy, J::AbstractMatrix{T}) where {T}
     n, m = size(J)
     D = scaling!(Diagonal(zeros(T, m)), scaling, J)
     F = qr!(Matrix(J), ColumnNorm())
-    return QRCache{S,typeof(F),T}(F, D, zeros(T, m), zeros(T, m), zeros(T, m), zeros(T, n))
-end
-
-"""
-    LQCache(strategy, scaling, J)
-
-Workspace for `LQStrategy` / `LQCholStrategy` (rows ≤ cols): the pivoted QR of `Jᵀ`, so that
-`J = P Rᵀ Qᵀ`, plus the row-length vectors `z`, `q` of the damped system.
-"""
-mutable struct LQCache{S<:Strategy,F,T} <: SolverCache
-    factorization::F                         # qr(Jᵀ, ColumnNorm())
-    scaling_matrix::Diagonal{T,Vector{T}}    # D
-    p::Vector{T}                             # step (cols)
-    Dp::Vector{T}
-    z::Vector{T}                             # (J D⁻² Jᵀ + λI) z = -f  (rows)
-    q::Vector{T}                             # workspace for dϕ/dλ (rows)
-    Jp::Vector{T}                            # (rows)
-end
-function LQCache(::S, scaling::ScalingStrategy, J::AbstractMatrix{T}) where {S<:Strategy,T}
-    n, m = size(J)
-    n <= m || throw(ArgumentError("$S needs rows ≤ cols, got $(size(J))"))
-    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
-    F = qr!(Matrix(J'), ColumnNorm())
-    return LQCache{S,typeof(F),T}(
+    return QRCholCache(
         F,
         D,
+        Matrix(J' * J),
+        zeros(T, (m, m)),
         zeros(T, m),
         zeros(T, m),
-        zeros(T, n),
-        zeros(T, n),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, m),
         zeros(T, n),
     )
 end
 
-subproblem_cache_init(s::Union{QRStrategy,QRCholStrategy}, scaling, J) =
-    QRCache(s, scaling, J)
-subproblem_cache_init(s::Union{LQStrategy,LQCholStrategy}, scaling, J) =
-    LQCache(s, scaling, J)
+"""
+    QRCache(scaling, J)
+
+Workspace for [`QRStrategy`](@ref). `augmented` holds `[J; √λ D]` and `rhs` the matching
+`[-f; 0]`; `qr!` consumes `augmented`, so its blocks are rewritten on every λ-iteration.
+"""
+mutable struct QRCache{F,T} <: SolverCache
+    factorization::F                         # qr(J, ColumnNorm())
+    scaling_matrix::Diagonal{T,Vector{T}}    # D
+    augmented::Matrix{T}                     # [J; √λ D], (rows + cols) × cols
+    rhs::Vector{T}                           # [-f; 0]
+    p::Vector{T}                             # step (cols)
+    Dp::Vector{T}
+    D²p::Vector{T}
+    q::Vector{T}                             # workspace for dϕ/dλ (cols)
+    Jᵀf::Vector{T}
+    Jp::Vector{T}                            # (rows)
+end
+function QRCache(scaling::ScalingStrategy, J::AbstractMatrix{T}) where {T}
+    n, m = size(J)
+    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
+    F = qr!(Matrix(J), ColumnNorm())
+    return QRCache(
+        F,
+        D,
+        zeros(T, (n + m, m)),
+        zeros(T, n + m),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, n),
+    )
+end
+
+"""
+    LQCache(scaling, J)
+
+Workspace for [`LQStrategy`](@ref) (rows ≤ cols): the pivoted QR of `Jᵀ`, so that `J = P Rᵀ Qᵀ`,
+`D⁻¹Jᵀ` (which depends on `D` and so is reformed on every solve), and `augmented` holding
+`[D⁻¹Jᵀ; √λ I]`. `z` and `q` are the row-length vectors of the damped system.
+"""
+mutable struct LQCache{F,T} <: SolverCache
+    factorization::F                         # qr(Jᵀ, ColumnNorm())
+    scaling_matrix::Diagonal{T,Vector{T}}    # D
+    D⁻¹Jᵀ::Matrix{T}                         # cols × rows
+    augmented::Matrix{T}                     # [D⁻¹Jᵀ; √λ I], (cols + rows) × rows
+    p::Vector{T}                             # step (cols)
+    Dp::Vector{T}
+    z::Vector{T}                             # (J D⁻² Jᵀ + λI) z = -f  (rows)
+    q::Vector{T}                             # workspace for dϕ/dλ (rows)
+    Jᵀf::Vector{T}                           # (cols)
+    Jp::Vector{T}                            # (rows)
+end
+function LQCache(scaling::ScalingStrategy, J::AbstractMatrix{T}) where {T}
+    n, m = size(J)
+    n <= m || throw(ArgumentError("LQStrategy needs rows ≤ cols, got $(size(J))"))
+    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
+    F = qr!(Matrix(J'), ColumnNorm())
+    return LQCache(
+        F,
+        D,
+        zeros(T, (m, n)),
+        zeros(T, (m + n, n)),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, n),
+        zeros(T, n),
+        zeros(T, m),
+        zeros(T, n),
+    )
+end
+
+"""
+    LQCholCache(scaling, J)
+
+Workspace for [`LQCholStrategy`](@ref) (rows ≤ cols). `gram` holds `J D⁻² Jᵀ`, reformed on every
+solve because it depends on `D`; `damped` receives `gram + λI` and then its Cholesky factor.
+"""
+mutable struct LQCholCache{F,T} <: SolverCache
+    factorization::F                         # qr(Jᵀ, ColumnNorm())
+    scaling_matrix::Diagonal{T,Vector{T}}    # D
+    D⁻²Jᵀ::Matrix{T}                         # cols × rows
+    gram::Matrix{T}                          # J D⁻² Jᵀ, rows × rows
+    damped::Matrix{T}                        # gram + λI, overwritten by its Cholesky factor
+    p::Vector{T}                             # step (cols)
+    Dp::Vector{T}
+    z::Vector{T}                             # (J D⁻² Jᵀ + λI) z = -f  (rows)
+    q::Vector{T}                             # workspace for dϕ/dλ (rows)
+    Jᵀf::Vector{T}                           # (cols)
+    Jp::Vector{T}                            # (rows)
+end
+function LQCholCache(scaling::ScalingStrategy, J::AbstractMatrix{T}) where {T}
+    n, m = size(J)
+    n <= m || throw(ArgumentError("LQCholStrategy needs rows ≤ cols, got $(size(J))"))
+    D = scaling!(Diagonal(zeros(T, m)), scaling, J)
+    F = qr!(Matrix(J'), ColumnNorm())
+    return LQCholCache(
+        F,
+        D,
+        zeros(T, (m, n)),
+        zeros(T, (n, n)),
+        zeros(T, (n, n)),
+        zeros(T, m),
+        zeros(T, m),
+        zeros(T, n),
+        zeros(T, n),
+        zeros(T, m),
+        zeros(T, n),
+    )
+end
+
+subproblem_cache_init(::QRCholStrategy, scaling, J) = QRCholCache(scaling, J)
+subproblem_cache_init(::QRStrategy, scaling, J) = QRCache(scaling, J)
+subproblem_cache_init(::LQStrategy, scaling, J) = LQCache(scaling, J)
+subproblem_cache_init(::LQCholStrategy, scaling, J) = LQCholCache(scaling, J)
 
 "Refactorize the new Jacobian into the cached buffer and update the scaling matrix."
-function update_cache!(cache::QRCache, J, scaling)
+function update_cache!(cache::Union{QRCholCache,QRCache}, J, scaling)
     copyto!(cache.factorization.factors, J)
     cache.factorization = qr!(cache.factorization.factors, ColumnNorm())
-    scaling!(cache.scaling_matrix, scaling, J)
+    cache isa QRCholCache && mul!(cache.JᵀJ, J', J)   # depends on J alone, not on D
+    return scaling!(cache.scaling_matrix, scaling, J)
 end
-function update_cache!(cache::LQCache, J, scaling)
+function update_cache!(cache::Union{LQCache,LQCholCache}, J, scaling)
     copyto!(cache.factorization.factors, J')
     cache.factorization = qr!(cache.factorization.factors, ColumnNorm())
-    scaling!(cache.scaling_matrix, scaling, J)
+    return scaling!(cache.scaling_matrix, scaling, J)
 end
