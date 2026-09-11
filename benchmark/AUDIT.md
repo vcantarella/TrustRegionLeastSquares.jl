@@ -97,7 +97,27 @@ sources:
 
 ## Results — uniform-1e-8 configuration
 
-Main figure (fresh, 2026-08-08):
+### 2026-09-11 re-run
+
+Every figure and number below was re-measured on 2026-09-11 against the finished solver. The table
+from the 2026-08-08 run is kept underneath for comparison, but it describes code with four defects
+that have since been fixed, so treat it as historical rather than as a baseline:
+
+- The `QRStrategy` λ-update had the wrong sign, so the step overshot the trust-region boundary (9%
+  past it on the case that exposed it, with a normal-equation residual of 0.25). `QRStrategy` is the
+  variant the `TRLS` row runs, so this affected the headline figures directly.
+- `ftol` compared the cost reduction against `max(cost, 1)`, making it an absolute floor once the
+  cost fell below 1. On Powell badly scaled the solver stopped at a gradient of 1.18; it is now a
+  relative test and reaches 1.2e-6.
+- The radius update now follows MINPACK `lmder`, scaling off the step actually taken.
+- The λ-iteration cap went from 6 to 10, which is what an ill-conditioned Jacobian needs to place
+  the boundary.
+
+Also: labels changed from "This work" to `TRLS`, and `LM-LQChol` rows produced before this date were
+actually produced by `LQStrategy` (the dispatch chain tested `"LQ"` first), so pre-2026-09-11 LQChol
+columns in any CSV are mislabelled LQ columns.
+
+### Historical: 2026-08-08 run
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
 |---|---|---|---|
