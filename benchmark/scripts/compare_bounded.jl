@@ -26,7 +26,7 @@ custom_problems = nameof.(get_custom_problems())   # all 15 ADNLSModel construct
 append!(nls_problems, custom_problems)
 # 2. Define solvers
 solvers = [
-    ("This work", TRLS.lm_trust_region!),
+    ("TRLS", TRLS.lm_trust_region!),
     ("LM-QR-scaled", TRLS.lm_trust_region!),
     ("LM-QRChol", TRLS.lm_trust_region!),
     ("LsqFit-LM", nothing),  # Special handling in test_solver_on_problem
@@ -65,7 +65,7 @@ display(summary_nls)
 # 5. Tests
 @testset "Bounded Solver Performance" begin
     # Success = close to the best cost found by any solver (compare_with_best), bounds respected.
-    success = summary_nls[summary_nls.solver .== "This work", :percentage_success]
+    success = summary_nls[summary_nls.solver .== "TRLS", :percentage_success]
     @test success[1] > 0.7
 end
 

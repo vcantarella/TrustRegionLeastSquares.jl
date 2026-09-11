@@ -5,7 +5,7 @@
 This repository is two things:
 
 1. **A reproducible benchmark suite** for Nonlinear Least-Squares (NLLS) solvers across the Julia and Python ecosystems, run on standard problem sets with per-solver fairness taken seriously.
-2. **A proposed trust-region Levenberg–Marquardt solver**, developed here and labeled *"This work"* in the benchmarks. Its design goal is robustness — solve every problem — while spending as few Jacobian evaluations as possible.
+2. **A proposed trust-region Levenberg–Marquardt solver**, developed here and labeled *"TRLS"* in the benchmarks. Its design goal is robustness — solve every problem — while spending as few Jacobian evaluations as possible.
 
 The headline finding: judged by raw wall-clock on small test problems, the proposed solver looks unremarkable — other codes finish individual problems faster. But it is one of only two solvers (with SciPy) that solves **100% of the problems**, and it does so in **few iterations**. When function/Jacobian evaluations are expensive — the situation in nearly every real-world fit, where the model is an ODE/PDE solve or a simulation — evaluation count dominates wall-clock, and the proposed solver moves to the front of the field.
 
@@ -15,7 +15,7 @@ The headline finding: judged by raw wall-clock on small test problems, the propo
 
 | Solver (label in figures) | Package | Method |
 |---|---|---|
-| This work | `TrustRegionLeastSquares.jl` v0.2 | LM trust region (QR) |
+| TRLS | `TrustRegionLeastSquares.jl` v0.2 | LM trust region (QR) |
 | NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.20 | TrustRegion, LevenbergMarquardt |
 | JSO-TRON | JSOSolvers.jl v0.14 | TRON |
 | LSO-Levenberg-QR | LeastSquaresOptim.jl v0.8 | Levenberg–Marquardt (QR) |
@@ -41,9 +41,9 @@ each solver terminates through whatever criteria it natively implements at that 
 
 | Criterion class | Who tests it (all at 1e-8) |
 |---|---|
-| First-order (gradient) | This work (`‖J'r‖₂`), SciPy `gtol` (∞-norm, scaled), Optim `g_tol` (∞-norm), LsqFit `g_tol`, TRON `atol` (projected gradient, `rtol=0`), LSO `g_tol` (∞-norm) |
+| First-order (gradient) | TRLS (`‖J'r‖₂`), SciPy `gtol` (∞-norm, scaled), Optim `g_tol` (∞-norm), LsqFit `g_tol`, TRON `atol` (projected gradient, `rtol=0`), LSO `g_tol` (∞-norm) |
 | Step size | **Disabled** where it is a single-step give-up test (SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`): one small step is the weakest evidence of optimality — it fires during slow crawls — and "this work" has no such test, so removing it keeps the criterion sets symmetric. Kept where structural: NonlinearSolve's stall detector (32 *consecutive* steps ≤ `abstol` — its only exit at nonzero residual) and PRIMA's `rhoend` (a DFO method's resolution parameter) |
-| Cost stagnation | This work `ftol`, SciPy `ftol`, LSO `f_tol`, NLLSsolver `reldcost` |
+| Cost stagnation | TRLS `ftol`, SciPy `ftol`, LSO `f_tol`, NLLSsolver `reldcost` |
 | Residual norm | NonlinearSolve `abstol` (on `‖r‖₂`) |
 | Trust-region resolution | PRIMA `rhoend` (the x-resolution of a derivative-free method) |
 
@@ -116,8 +116,8 @@ Both benchmark scripts accept `MAX_VARS` and `PROBLEM_LIMIT` environment variabl
 
 ### Standard benchmark: cheap evaluations
 
-![NLLS solver performance](test_plots/nlls_solver_performance.png)
-*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). "This work" and SciPy are the only solvers with a 100% success rate; "This work" is 2.7× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
+![NLLS solver performance](docs/src/assets/benchmarks/nlls_solver_performance.png)
+*Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). "TRLS" and SciPy are the only solvers with a 100% success rate; "TRLS" is 2.7× faster than SciPy overall. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
 
 On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile. The proposed solver's per-iteration cost (careful factorizations, exact subproblem solves) buys something different: it converges on **every** problem, in a median of ~13 iterations.
 
@@ -125,14 +125,14 @@ On these small, microsecond-scale problems, per-iteration overhead dominates and
 
 To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient J′r requires the Jacobian, so gradient-based solvers must pay it too).
 
-![NLLS solver performance with expensive Jacobians](test_plots/nlls_solver_performance_delay.png)
-*Figure 2: Same experiment with 200 ms per Jacobian/gradient evaluation (same 88 problems; colors and markers as in Figure 1). Evaluation count now dominates wall-clock and the few-iteration LM methods cluster at the front: "This work" leads the profile and ties the SciPy baseline (1.0×) as the only pair at 100% success, with NLLSsolver effectively tied on speed (1.0×) at 98%. NonlinearSolve-LM pays its stall-confirmation tail (0.63×), and line-search quasi-Newton methods (BFGS/L-BFGS) drop to 0.22–0.25× because their line searches evaluate the gradient several times per iteration. LSO's 1.2× is computed over its own smaller successful set (88% of problems).*
+![NLLS solver performance with expensive Jacobians](docs/src/assets/benchmarks/nlls_solver_performance_delay.png)
+*Figure 2: Same experiment with 200 ms per Jacobian/gradient evaluation (same 88 problems; colors and markers as in Figure 1). Evaluation count now dominates wall-clock and the few-iteration LM methods cluster at the front: "TRLS" leads the profile and ties the SciPy baseline (1.0×) as the only pair at 100% success, with NLLSsolver effectively tied on speed (1.0×) at 98%. NonlinearSolve-LM pays its stall-confirmation tail (0.63×), and line-search quasi-Newton methods (BFGS/L-BFGS) drop to 0.22–0.25× because their line searches evaluate the gradient several times per iteration. LSO's 1.2× is computed over its own smaller successful set (88% of problems).*
 
 This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
 
 ### Bound-constrained problems (IN PROGRESS)
 
-![Bounded solver performance](test_plots/bounded_solver_performance.png)
+![Bounded solver performance](docs/src/assets/benchmarks/bounded_solver_performance.png)
 *Figure 3: Performance profile on bound-constrained NLLS problems.*
 
 ## The proposed solver

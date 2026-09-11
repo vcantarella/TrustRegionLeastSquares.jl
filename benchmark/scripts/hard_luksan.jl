@@ -95,7 +95,7 @@ resa6(x06)
 
 
 solvers = [
-    ("This work", TRLS.lm_trust_region!),
+    ("TRLS", TRLS.lm_trust_region!),
     ("LM-QR-scaled", TRLS.lm_trust_region!),
     ("LM-QRChol", TRLS.lm_trust_region!),
     ("LM-QRChol-scaled", TRLS.lm_trust_region!),
@@ -176,7 +176,7 @@ function run_luksan(problems, tag)
     df_proc = compare_with_best(DataFrame(results))
     summary_df = evaluate_solvers(df_proc)
     display(summary_df)
-    @test summary_df[summary_df.solver .== "This work", :percentage_success][1] > 0.49
+    @test summary_df[summary_df.solver .== "TRLS", :percentage_success][1] > 0.49
     figpath = joinpath(plots_dir(), "hardluksan_nls_solver_performance_$tag.png")
     save(figpath, build_performance_plots(df_proc))
     println("plot: $figpath")

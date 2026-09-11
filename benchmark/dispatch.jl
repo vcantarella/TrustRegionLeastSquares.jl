@@ -43,8 +43,8 @@ end
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
-        if solver_name == "This work" || startswith(solver_name, "LM-")
-            # TrustRegionLeastSquares. The label picks the variant: "This work" / "LM-QR" -> QRStrategy,
+        if solver_name == "TRLS" || startswith(solver_name, "LM-")
+            # TrustRegionLeastSquares. The label picks the variant: "TRLS" / "LM-QR" -> QRStrategy,
             # "LM-QRChol" -> QRCholStrategy, "LM-LQ" / "LM-LQChol" -> the LQ family (residuals <=
             # variables only); a "-scaled" suffix switches on JacobianScaling. Bounds are always
             # passed: infinite bounds take the unconstrained path, finite ones the projected step.

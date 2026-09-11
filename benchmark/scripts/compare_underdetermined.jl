@@ -25,7 +25,7 @@ end
 crop(pd) = crop_nls_functions(pd, clamp(ceil(Int, CROP_RATIO * pd.m), 1, pd.m - 1))
 
 solvers = [
-    ("This work", TRLS.lm_trust_region!),
+    ("TRLS", TRLS.lm_trust_region!),
     ("LM-QR-scaled", TRLS.lm_trust_region!),
     ("NonlinearSolve-TR", NonlinearSolve.TrustRegion),
     ("NonlinearSolve-LM", NonlinearSolve.LevenbergMarquardt),

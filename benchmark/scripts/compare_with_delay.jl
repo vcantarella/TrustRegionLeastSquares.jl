@@ -18,7 +18,7 @@ end
 
 solvers = [
     # TrustRegionLeastSquares (LM-QR, the method this poster presents)
-    ("This work", TRLS.lm_trust_region!),
+    ("TRLS", TRLS.lm_trust_region!),
 
     # NonlinearSolve.jl (short labels for the poster legend; dispatch matches the
     # "NonlinearSolve-" prefix)
@@ -139,7 +139,7 @@ using Test
     # Check that our solvers perform reasonably well (success rate > 90% relative to best)
     # Note: These thresholds might need adjustment based on the specific problem set difficulty
     if !isempty(summary_nls)
-        row = summary_nls[summary_nls.solver .== "This work", :]
+        row = summary_nls[summary_nls.solver .== "TRLS", :]
         if !isempty(row)
             @test row[1, :percentage_success] > 0.9
         end

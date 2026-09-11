@@ -32,7 +32,7 @@ not against documentation.
 | 3 | Hidden 30 s wall-clock caps: TRON `max_time = 30.0`, NLLSsolver `maxtime = 30.0` — no other solver had one. TRON also stopped at `atol + rtol·‖g₀‖` with `atol = rtol = √eps` (per-problem-varying). | TRON: `atol = 1e-8, rtol = 0, max_time = Inf`. NLLSsolver: `maxtime = 1e6` (stored as `UInt64` ns; `Inf` throws). TRON success rose 88.6% → 93.2%. |
 | 4 | `lm_trust_region!` printed to stdout every iteration **inside the timed region**. | `verbose::Bool = false` kwarg guards all prints (`src/algorithms.jl`). |
 | 5 | Tolerances were mixed per class (gradient 1e-6, others 1e-8). | **Uniform 1e-8 on every exposed tolerance** (decision below). |
-| 6 | Single-step `x_tol` criteria fire on slow crawl without optimality evidence; "This work" has no such test. | Disabled where single-step: SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`. Kept where structural: NonlinearSolve stall (32 *consecutive* steps; only exit at nonzero residual), PRIMA `rhoend` (DFO resolution parameter). |
+| 6 | Single-step `x_tol` criteria fire on slow crawl without optimality evidence; "TRLS" has no such test. | Disabled where single-step: SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`. Kept where structural: NonlinearSolve stall (32 *consecutive* steps; only exit at nonzero residual), PRIMA `rhoend` (DFO resolution parameter). |
 
 ### Resolved with the bounded solver (2026-09-11)
 
@@ -85,7 +85,7 @@ sources:
 
 | Solver | Explicit settings | Native criteria left active (defaults) |
 |---|---|---|
-| This work (`lm_trust_region!`) | `gtol = 1e-8, ftol = 1e-8, verbose = false` | radius collapse `< 1e-8` |
+| TRLS (`lm_trust_region!`) | `gtol = 1e-8, ftol = 1e-8, verbose = false` | radius collapse `< 1e-8` |
 | NonlinearSolve TR/LM | `abstol = 1e-8, maxiters = 400` | SafeBest stall exit (32 steps ≤ abstol) |
 | JSO-TRON | `atol = 1e-8, rtol = 0, max_time = Inf` | — |
 | LSO-Levenberg-QR | `iterations = 400, g_tol = 1e-8, x_tol = 0` | `f_tol = 1e-8` default |
@@ -101,7 +101,7 @@ Main figure (fresh, 2026-08-08):
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
 |---|---|---|---|
-| This work | **100.0** | 12.5 | 0.495 s |
+| TRLS | **100.0** | 12.5 | 0.495 s |
 | Scipy-LeastSquares | **100.0** | 13.0 | 1.329 s |
 | NLLSsolver-LM | 97.7 | 13.5 | 0.035 s |
 | NonlinearSolve-LM | 94.3 | 39.0 | 0.256 s |
@@ -113,11 +113,11 @@ Main figure (fresh, 2026-08-08):
 | LSO-Levenberg-QR | 87.5 | 13.0 | 0.120 s |
 | LsqFit-LM | 84.1 | n/a (not exposed) | 0.071 s |
 
-Headline: **This work 100% at 2.7× SciPy**; enabling `ftol = 1e-8` cut its median
+Headline: **TRLS 100% at 2.7× SciPy**; enabling `ftol = 1e-8` cut its median
 iterations 14.5 → 12.5. Every fairness fix moved a *competitor* up (TRON +4.6 pts,
 NonlinearSolve-LM median 72 → 39, PRIMA +1.1, LsqFit +2.3) and the headline survived —
 cite this when questioned. Delay-figure rerun at these settings in progress; expect the
-few-iteration LM cluster (This work / SciPy / NLLSsolver ≈ 1×) ahead of
+few-iteration LM cluster (TRLS / SciPy / NLLSsolver ≈ 1×) ahead of
 NonlinearSolve-LM (stall tail) and BFGS/L-BFGS (line-search gradient evaluations).
 
 ## Reproduce
