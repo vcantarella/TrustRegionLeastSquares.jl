@@ -95,16 +95,16 @@ for a Lagrange multiplier `λ ≥ 0`, found by safeguarded Newton iteration on `
 | Solver (label in figures) | Package | Method |
 |---|---|---|
 | TRLS | `TrustRegionLeastSquares.jl` v0.1 | LM trust region, `QRStrategy` |
-| NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.20 | TrustRegion, LevenbergMarquardt |
+| NonlinearSolve-TR / -LM | NonlinearSolve.jl v4.30 | TrustRegion, LevenbergMarquardt |
 | JSO-TRON | JSOSolvers.jl v0.14 | TRON |
 | LSO-Levenberg-QR | LeastSquaresOptim.jl v0.8 | Levenberg–Marquardt (QR) |
 | LsqFit-LM | LsqFit.jl v0.16 | Levenberg–Marquardt |
-| NLLSsolver-LM | NLLSsolver.jl v4.0 | Levenberg–Marquardt |
-| Optim-BFGS / -L-BFGS | Optim.jl v2.2 | quasi-Newton on 0.5‖r‖² |
+| NLLSsolver-LM | NLLSsolver.jl v4.1 | Levenberg–Marquardt |
+| Optim-BFGS / -L-BFGS | Optim.jl v2.3 | quasi-Newton on 0.5‖r‖² |
 | PRIMA-NEWUOA | PRIMA.jl v0.2 | NEWUOA (derivative-free, shown for reference) |
 | Scipy-LeastSquares | SciPy 1.18 (Python 3.13, via PythonCall) | `least_squares` (TRF) — the **baseline** |
 
-Test problems come from **NLSProblems.jl** (via NLPModels.jl); CUTEst problems are supported by the same harness. Julia 1.12.
+Test problems come from **NLSProblems.jl** v0.5 (via NLPModels.jl); CUTEst problems are supported by the same harness. Measured on Julia 1.12, macOS aarch64; exact package versions are pinned in `benchmark/Manifest.toml`.
 
 The `TRLS` row runs the `QRStrategy` variant, which is what the figures show. The package default is
 `QRCholStrategy`, which is faster per iteration but squares the condition number; `internal_variants.jl`
