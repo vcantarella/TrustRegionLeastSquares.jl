@@ -1,0 +1,4 @@
+# Scope test-item discovery to test/. @run_package_tests scans from the package root, so without
+# this it also walks src/ and all of benchmark/. The same file drives the VS Code Testing pane.
+config-version = 1
+include = ["test/**"]

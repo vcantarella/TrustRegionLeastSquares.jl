@@ -1,0 +1,12 @@
+# Changes here will be overwritten by Copier
+Authors: vcantarella <vcantarella@gmail.com> and contributors
+JuliaMinVersion: '1.10'
+License: MIT
+LicenseCopyrightHolders: vcantarella
+PackageName: TrustRegionLeastSquares
+PackageOwner: vcantarella
+PackageUUID: 21ca2098-f897-4540-9ab3-b13ed390dd37
+StrategyConfirmIncluded: false
+StrategyLevel: 3
+StrategyReviewExcluded: false
+_src_path: /Users/vcantarella/.julia/packages/BestieTemplate/MPEqY

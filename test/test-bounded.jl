@@ -1,17 +1,20 @@
-using Test, LinearAlgebra, Random
-isdefined(Main, :MGH) || include(joinpath(@__DIR__, "..", "problems.jl"))
+@testsnippet BoundChecks begin
+    using LinearAlgebra, Random
+    import TrustRegionLeastSquares as TRLS
 
-feasible(x, lb, ub) = all(lb .<= x .<= ub)
-# KKT for bounds: each variable is either interior with g_i ≈ 0, or on a bound with the gradient pushing outwards.
-kkt(x, g, lb, ub; tol = 1e-6) = all(
-    i ->
-        (x[i] == lb[i] && g[i] >= -tol) ||
-        (x[i] == ub[i] && g[i] <= tol) ||
-        abs(g[i]) < tol,
-    eachindex(x),
-)
+    feasible(x, lb, ub) = all(lb .<= x .<= ub)
+    # KKT for bounds: each variable is either interior with g_i ≈ 0, or on a bound with the gradient pushing outwards.
+    kkt(x, g, lb, ub; tol = 1e-6) = all(
+        i ->
+            (x[i] == lb[i] && g[i] >= -tol) ||
+            (x[i] == ub[i] && g[i] <= tol) ||
+            abs(g[i]) < tol,
+        eachindex(x),
+    )
+end
 
-@testset "linear residual x − target: optimum is the projection of target onto the box" begin
+@testitem "linear residual x − target: optimum is the projection of target onto the box" tags =
+    [:unit, :validation, :fast] setup = [Problems, BoundChecks] begin
     x0 = fill(0.1, 3)
     for (target, lb, ub) in (
             ([2.0, -1.5, 0.7], fill(-Inf, 3), fill(Inf, 3)),      # infinite bounds: unconstrained optimum
@@ -19,9 +22,9 @@ kkt(x, g, lb, ub; tol = 1e-6) = all(
             ([-2.0, -2.0, -2.0], fill(-1.0, 3), fill(Inf, 3)),     # active lower bound
             ([5.0, 0.25, -5.0], fill(-1.0, 3), fill(1.0, 3)),      # mixed: two active, one interior
         ),
-        strategy in STRATEGIES                                   # J = I is square: every strategy applies
+        strategy in Problems.STRATEGIES                                   # J = I is square: every strategy applies
 
-        res!, jac! = inplace(x -> x .- target)
+        res!, jac! = Problems.inplace(x -> x .- target)
         x, f, g, iter =
             TRLS.lm_trust_region!(res!, jac!, x0, 3, strategy; lb, ub, gtol = 1e-10)
         @test x ≈ clamp.(target, lb, ub) atol = 1e-8
@@ -30,31 +33,36 @@ kkt(x, g, lb, ub; tol = 1e-6) = all(
     end
 end
 
-@testset "Rosenbrock with x1 ≤ 0.5: $(label(strategy)) / $(label(scaling))" for strategy in
-                                                                                STRATEGIES,
-    scaling in SCALINGS
-    # f1 = 0 forces x2 = x1², then 0.5(1 − x1)² is minimized by pushing x1 to its bound: x* = (0.5, 0.25).
-    res!, jac! = inplace(rosenbrock)
-    lb, ub = [-2.0, -2.0], [0.5, 2.0]
-    x, f, g, iter = TRLS.lm_trust_region!(
-        res!,
-        jac!,
-        [-1.2, 1.0],
-        2,
-        strategy,
-        scaling;
-        lb,
-        ub,
-        gtol = 1e-8,
-    )
-    @test x ≈ [0.5, 0.25] atol = 1e-6
-    @test x[1] == ub[1]                                        # the bound genuinely binds
-    @test feasible(x, lb, ub) && kkt(x, g, lb, ub)
-    @test iter < 50
+@testitem "Rosenbrock with x1 ≤ 0.5" tags = [:unit, :validation, :fast] setup =
+    [Problems, BoundChecks] begin
+    @testset "$(Problems.label(strategy)) / $(Problems.label(scaling))" for strategy in
+                                                                            Problems.STRATEGIES,
+        scaling in Problems.SCALINGS
+
+        # f1 = 0 forces x2 = x1², then 0.5(1 − x1)² is minimized by pushing x1 to its bound: x* = (0.5, 0.25).
+        res!, jac! = Problems.inplace(Problems.rosenbrock)
+        lb, ub = [-2.0, -2.0], [0.5, 2.0]
+        x, f, g, iter = TRLS.lm_trust_region!(
+            res!,
+            jac!,
+            [-1.2, 1.0],
+            2,
+            strategy,
+            scaling;
+            lb,
+            ub,
+            gtol = 1e-8,
+        )
+        @test x ≈ [0.5, 0.25] atol = 1e-6
+        @test x[1] == ub[1]                                        # the bound genuinely binds
+        @test feasible(x, lb, ub) && kkt(x, g, lb, ub)
+        @test iter < 50
+    end
 end
 
-@testset "bound handling: fixed variable, infeasible start, one-sided, interior" begin
-    res!, jac! = inplace(rosenbrock)
+@testitem "bound handling: fixed variable, infeasible start, one-sided, interior" tags =
+    [:unit, :validation, :fast] setup = [Problems, BoundChecks] begin
+    res!, jac! = Problems.inplace(Problems.rosenbrock)
     # fixed variable lb == ub: x2 stays put, x1 minimizes (1−x1)² + 100(0.3−x1²)²
     x, f, g, iter = TRLS.lm_trust_region!(
         res!,
@@ -83,7 +91,7 @@ end
     )
     @test x ≈ [1.0, 1.0] atol = 1e-8
     # one-sided bounds cutting Beale's optimum (3, 0.5)
-    res!, jac! = inplace(beale)
+    res!, jac! = Problems.inplace(Problems.beale)
     x, f, g, iter =
         TRLS.lm_trust_region!(res!, jac!, [1.0, 1.0], 3; ub = [2.0, Inf], gtol = 1e-8)
     @test x[1] == 2.0 && kkt(x, g, [-Inf, -Inf], [2.0, Inf])
@@ -100,7 +108,7 @@ end
     )
 end
 
-@testset "Coleman–Li distances" begin
+@testitem "Coleman–Li distances" tags = [:unit, :validation, :fast] setup = [BoundChecks] begin
     x, g = fill(0.5, 4), [-1.0, 1.0, -1.0, 1.0]
     lb, ub = [0.0, 0.2, 0.0, -Inf], [1.0, 1.0, Inf, Inf]
     @test TRLS.coleman_li_distances!(zeros(4), x, g, lb, ub) == [0.5, 0.3, 1.0, 1.0]   # ub − x, x − lb, ∞ bound, ∞ bound
@@ -108,23 +116,27 @@ end
           [0.0, 0.0]   # on the bound, pushing outwards
 end
 
-@testset "projected gradient norm" begin
+@testitem "projected gradient norm" tags = [:unit, :validation, :fast] setup = [BoundChecks] begin
     Random.seed!(5)
     g, x = randn(6), 1e8 * randn(6)
     @test TRLS.projected_gradient_norm(g, x, fill(-Inf, 6), fill(Inf, 6)) ≈ norm(g) rtol =
         1e-15   # |x| ≫ |g|: no cancellation
-    @test TRLS.projected_gradient_norm([-3.0, 2.0], [1.0, 0.0], [-Inf, 0.0], [1.0, Inf]) == 0        # on bounds, gradient outwards
+    @test TRLS.projected_gradient_norm([-3.0, 2.0], [1.0, 0.0], [-Inf, 0.0], [1.0, Inf]) ==
+          0        # on bounds, gradient outwards
     @test TRLS.projected_gradient_norm([-3.0, 2.0], [0.9, 0.5], [-Inf, 0.0], [1.0, Inf]) ≈
           sqrt(0.1^2 + 0.5^2)
 end
 
-@testset "Cauchy step: ω is limited by the model, the trust region, or the box" begin
+@testitem "Cauchy step: ω is limited by the model, the trust region, or the box" tags =
+    [:unit, :validation, :fast] setup = [BoundChecks] begin
     Random.seed!(8)
     n, m = 6, 4
     J = randn(n, m)
     lb, ub = [0.0, 0.0, -Inf, -Inf], [1.0, 1.0, Inf, Inf]
     x = [0.9, 0.5, 0.5, 0.5]
-    cache = TRLS.BoundedCache(TRLS.subproblem_cache_init(TRLS.QRStrategy(), TRLS.NoScaling(), J))
+    cache = TRLS.BoundedCache(
+        TRLS.subproblem_cache_init(TRLS.QRStrategy(), TRLS.NoScaling(), J),
+    )
     model_decrease(p, g) = -dot(g, p) - sum(abs2, J * p) / 2
 
     # The three candidates of MMP eq. 8, written out independently of the implementation.
@@ -170,13 +182,16 @@ end
     end
 end
 
-@testset "Cauchy-fraction safeguard" begin
+@testitem "Cauchy-fraction safeguard" tags = [:unit, :validation, :fast] setup =
+    [BoundChecks] begin
     Random.seed!(8)
     n, m = 6, 4
     J, f = randn(n, m), randn(n)
     x, lb, ub = [0.9, 0.5, 0.5, 0.5], [0.0, 0.0, -Inf, -Inf], [1.0, 1.0, 1.0, Inf]
     g = J' * f
-    cache = TRLS.BoundedCache(TRLS.subproblem_cache_init(TRLS.QRStrategy(), TRLS.NoScaling(), J))
+    cache = TRLS.BoundedCache(
+        TRLS.subproblem_cache_init(TRLS.QRStrategy(), TRLS.NoScaling(), J),
+    )
     TRLS.affine_scaling!(cache, x, g, lb, ub)
     model_decrease(p) = -dot(g, p) - sum(abs2, J * p) / 2
     decrease_cauchy = TRLS.cauchy_step!(cache, J, g, x, 1e3, lb, ub)

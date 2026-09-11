@@ -49,13 +49,12 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             # variables only); a "-scaled" suffix switches on JacobianScaling. Bounds are always
             # passed: infinite bounds take the unconstrained path, finite ones the projected step.
             scaling_strategy =
-                contains(lowercase(solver_name), "scaled") ?
-                TRLS.JacobianScaling() : TRLS.NoScaling()
+                contains(lowercase(solver_name), "scaled") ? TRLS.JacobianScaling() :
+                TRLS.NoScaling()
             subproblem_strategy =
                 contains(solver_name, "LQChol") ? TRLS.LQCholStrategy() :
                 contains(solver_name, "QRChol") ? TRLS.QRCholStrategy() :
-                contains(solver_name, "LQ") ? TRLS.LQStrategy() :
-                TRLS.QRStrategy()
+                contains(solver_name, "LQ") ? TRLS.LQStrategy() : TRLS.QRStrategy()
             solve_once() = solver_func(
                 prob_data.residual_func!,
                 prob_data.jacobian_func!,
@@ -73,12 +72,8 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             t = minimum(@be solve_once()).time
             final_cost = 0.5 * dot(r_opt, r_opt)
             converged =
-                TRLS.projected_gradient_norm(
-                    g_opt,
-                    x_opt,
-                    prob_data.bl,
-                    prob_data.bu,
-                ) < 1e-8
+                TRLS.projected_gradient_norm(g_opt, x_opt, prob_data.bl, prob_data.bu) <
+                1e-8
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"

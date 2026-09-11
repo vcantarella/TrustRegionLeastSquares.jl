@@ -3,6 +3,13 @@ uuid = "21ca2098-f897-4540-9ab3-b13ed390dd37"
 authors = ["vcantarella <vcantarella@gmail.com> and contributors"]
 version = "0.1.0"
 
+# One manifest at the root for the package, its tests and its docs (Julia 1.12+; older versions
+# ignore this section and resolve each environment on its own). benchmark/ is deliberately left
+# out: its stack (CUTEst, PythonCall, CairoMakie) would otherwise share one resolve with the
+# tests, where a single upstream bound could block them, and its environment is pinned separately.
+[workspace]
+projects = ["test", "docs"]
+
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 

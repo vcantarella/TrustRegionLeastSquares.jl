@@ -1,7 +1,21 @@
-/Manifest.toml
-/test/Manifest.toml
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+*.rej
+.DS_Store
+.benchmarkci
+Manifest.toml
+# the benchmark environment is pinned on purpose: its results are cited in the README
+!benchmark/Manifest.toml
+benchmark/*.json
+coverage
+docs/build/
+env
+node_modules
+# local tool state
 .CondaPkg/
 .vscode/
+.gemini/
+.claude/
 test_env/
 venv/
-.gemini/

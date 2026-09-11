@@ -14,7 +14,8 @@ function expfit(n, m; seed = 1)
 end
 
 sizes = [(20, 10), (200, 50), (2000, 200), (10, 20), (50, 200), (200, 2000)]
-strategies = (TRLS.QRCholStrategy(), TRLS.QRStrategy(), TRLS.LQStrategy(), TRLS.LQCholStrategy())
+strategies =
+    (TRLS.QRCholStrategy(), TRLS.QRStrategy(), TRLS.LQStrategy(), TRLS.LQCholStrategy())
 scalings = (TRLS.NoScaling(), TRLS.JacobianScaling())
 rows = []
 for (n, m) in sizes, strategy in strategies, scaling in scalings
