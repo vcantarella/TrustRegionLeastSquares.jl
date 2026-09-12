@@ -150,8 +150,10 @@ function run_luksan(problems, tag)
     results = []
     for prob_data in problems
         println("Problem $(prob_data.problem) ($tag), x0 = $(prob_data.x0)")
+        flush(stdout)   # stdout is block-buffered to a file: without this, slow looks like hung
         for (solver_name, solver_func) in solvers
             print("  Testing $solver_name... ")
+            flush(stdout)
             result =
                 test_solver_on_problem(solver_name, solver_func, prob_data, nothing, 400)
             if result.success && result.converged
@@ -161,6 +163,7 @@ function run_luksan(problems, tag)
             else
                 println(result.success ? "✗ no convergence" : "✗ failed")
             end
+            flush(stdout)
             push!(
                 results,
                 merge(

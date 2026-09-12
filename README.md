@@ -279,6 +279,33 @@ separately: `LM-LQ` reaches 100% with the highest min-norm rate (0.97 of problem
 smallest `‖x*-x0‖` any variant found), and `JacobianScaling` measurably hurts there, dropping the
 rate to 0.80 — scaling pulls the step away from the minimum-norm direction.
 
+#### Hard exponential fits, where this solver does not win
+
+Six deliberately nasty exponential-fitting problems from Lukšan [[Luk96]](#references), run both in
+their original parameterization and with `x = exp(y)`. Parameters span orders of magnitude: A.3
+starts at `[0.02, 4000, 250]` and A.5 at `[1e5, 1e5, 1.08, 1.31]`.
+
+| Variant | TRLS (no scaling) | TRLS + `JacobianScaling` | Best in field |
+|---|---|---|---|
+| Original | 2 / 6 | **4 / 6** | 4 / 6 (also NonlinearSolve-LM, NonlinearSolve-PolyAlg, LSO-DogLeg-QR) |
+| `x = exp(y)` | 4 / 6 | 4 / 6 | **6 / 6** (NonlinearSolve-PolyAlg) |
+
+Two things this set is kept for, neither of them flattering:
+
+- **Scaling is not optional here.** In the original parameterization, turning on `JacobianScaling`
+  takes this solver from 2 of 6 to 4 of 6. Column-norm scaling is the whole difference between
+  failing most of the set and matching the best anyone manages, which is the clearest argument for
+  that option existing. On A.4 the two scaled variants are the only solvers in a field of 22 that
+  reach the best cost at all.
+- **A polyalgorithm beats a single method.** Under the log reparameterization
+  NonlinearSolve's `FastShortcutNLLSPolyalg` solves all six while this solver solves four. Switching
+  strategies when one stalls is something this package does not do, and on problems like these it
+  wins.
+
+The regression guard in `hard_luksan.jl` is therefore on the scaled variant, not the default one:
+asserting that the unscaled configuration keeps working on problems that need scaling would be
+asserting the wrong thing.
+
 #### Bound-constrained problems
 
 ![Bounded solver performance](docs/src/assets/benchmarks/bounded_solver_performance.png)
