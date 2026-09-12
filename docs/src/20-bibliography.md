@@ -1,3 +1,7 @@
+```@meta
+CurrentModule = TrustRegionLeastSquares
+```
+
 # [Bibliography](@id bibliography)
 
 The solver is an implementation of published methods rather than a new one. This page lists what it
