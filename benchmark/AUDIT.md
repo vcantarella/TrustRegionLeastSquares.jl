@@ -49,6 +49,36 @@ not against documentation.
 - `run.jl` stored `nvars`/`nresiduals` swapped. Correct in `run.jl`; `hard_luksan.jl` carried the
   same swap and is fixed too.
 
+### The one wall-clock cap, and why it is not finding #3 again (2026-09-12)
+
+Finding #3 removed hidden 30 s caps from TRON and NLLSsolver. The delay benchmark now sets one
+deliberately: `time_limit = 900` (15 minutes) for Optim-BFGS and Optim-L-BFGS. The two are not the
+same kind of thing.
+
+What made the 30 s caps unfair was that they were package defaults, differed between solvers, were
+invisible in the configuration, and bit at a scale that changed outcomes — lifting them moved TRON
+from 88.6% to 93.2%. This cap is stated in the configuration table, applies to the two rows already
+labelled reference baselines rather than like-for-like competitors, and sits three orders of
+magnitude above the scale where these solvers finish: the slowest Optim cell ever recorded in this
+suite is Optim-L-BFGS on mgh03 at 987 s, and re-running tp241 with the cap in place reproduces
+August's uncapped numbers to within rounding (11.75 s / 31 iterations against 11.777 s / 30).
+
+It exists because the `iterations` budget does not bound gradient evaluations: the line search calls
+the gradient many times per iteration, and under a 200 ms gradient those two solvers were **49.6% of
+the whole benchmark's runtime** (83.9 of 169.3 minutes of solve time). Optim checks the limit between
+iterations, so the effective bound is 15 minutes plus one iteration. A capped run returns its best
+iterate with `converged = false` and is scored on the cost it reached, exactly like any other
+non-convergent run.
+
+Two related changes at the same time:
+
+- The Optim branch is timed on its single solve instead of through `@be`. Every cell in the delay
+  benchmark takes seconds, so Chairmarks' 0.1 s budget yields exactly one sample and
+  `minimum(@be f)` was already just the time of one call — at the cost of running the solve a second
+  time. Removing that halves the most expensive half of the benchmark.
+- Every benchmark loop now flushes stdout. Julia block-buffers stdout to a file, so a run that is
+  merely slow had been indistinguishable from one that had hung; diagnosing that cost a 7-hour run.
+
 ## The termination-criteria decision
 
 Final scheme: **every tolerance a solver exposes is set to 1e-8**; each solver stops
@@ -91,7 +121,7 @@ sources:
 | LSO-Levenberg-QR | `iterations = 400, g_tol = 1e-8, x_tol = 0` | `f_tol = 1e-8` default |
 | SciPy `least_squares` (TRF) | `gtol = 1e-8, xtol = None, max_nfev = 1000` | `ftol = 1e-8` default |
 | NLLSsolver-LM | `reldcost = 1e-8, maxiters = 400, maxtime = 1e6` | `absdcost/dstep = 1e-15` (off) |
-| Optim BFGS/L-BFGS | `g_tol = 1e-8, iterations = 400` | x/f tolerances off (Optim default) |
+| Optim BFGS/L-BFGS | `g_tol = 1e-8, iterations = 400`; `time_limit = 900` in the delay benchmark only | x/f tolerances off (Optim default) |
 | LsqFit-LM | `g_tol = 1e-8, x_tol = 0, maxIter = 400` | — |
 | PRIMA-NEWUOA | `rhoend = 1e-8, maxfun = 400·n_vars` | — (derivative-free reference) |
 

@@ -40,6 +40,10 @@ function NLLSsolver.computeresjacstatic(
     return r, J
 end
 
+# Wall-clock cap for the Optim quasi-Newton baselines, in seconds; see the Optim branch below for
+# why they alone carry one. Scripts may lower it: the delay benchmark sets 15 minutes.
+const OPTIM_TIME_LIMIT = Ref(NaN)
+
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
@@ -337,9 +341,25 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif solver_name in ["Optim-BFGS", "Optim-L-BFGS"]
             # Quasi-Newton baselines on the scalar objective 0.5‖r‖² (Optim.jl).
             # Out-of-place obj/grad closures, hence inplace = false.
+            #
+            # `time_limit` is the one wall-clock cap in this suite, and it applies only to these
+            # two reference baselines. Their line search evaluates the gradient many times per
+            # iteration, which the `iterations` budget does not bound, so under the delay
+            # benchmark's 200 ms gradient a single cell can run for tens of minutes: these two
+            # solvers were half of that benchmark's entire runtime, and its slowest cell was
+            # Optim-L-BFGS on mgh03 at 987 s. Optim checks the limit between iterations, so the
+            # effective bound is the cap plus one iteration. A capped run still returns its best
+            # iterate with `converged = false` and is scored on the cost it reached, like any
+            # other non-convergent run. See benchmark/AUDIT.md — the 30 s caps removed for
+            # fairness were package defaults that differed per solver and bit at a scale where
+            # they changed outcomes; this one is explicit and three orders of magnitude looser.
             method = solver_name == "Optim-BFGS" ? Optim.BFGS() : Optim.LBFGS()
-            optim_opts = Optim.Options(iterations = max_iter, g_tol = 1e-8)
-            res = Optim.optimize(
+            optim_opts = Optim.Options(
+                iterations = max_iter,
+                g_tol = 1e-8,
+                time_limit = OPTIM_TIME_LIMIT[],
+            )
+            solve_optim() = Optim.optimize(
                 prob_data.obj_func,
                 prob_data.grad_func,
                 copy(prob_data.x0),
@@ -347,16 +367,12 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 optim_opts;
                 inplace = false,
             )
-            t = minimum(
-                @be Optim.optimize(
-                    prob_data.obj_func,
-                    prob_data.grad_func,
-                    copy(prob_data.x0),
-                    method,
-                    optim_opts;
-                    inplace = false,
-                )
-            ).time
+            # Timed on the single solve rather than through `@be`, which would run it again. With
+            # a solve this slow Chairmarks' 0.1 s budget yields exactly one sample anyway, so
+            # `minimum(@be ...)` is the time of one call — bought at the price of a second one.
+            timed = @timed solve_optim()
+            res = timed.value
+            t = timed.time
             x_opt = Optim.minimizer(res)
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)

@@ -46,12 +46,20 @@ solvers = [
 ]
 
 # We need a custom benchmark loop to inject the delay into the jacobian functions
+# The Optim baselines get a 15-minute wall-clock cap here: the 200 ms gradient is what makes their
+# line searches expensive, and an uncapped cell can run for tens of minutes (see dispatch.jl).
+OPTIM_TIME_LIMIT[] = 900.0
+
 function nlls_benchmark_with_delay(problems, solvers; max_iter = 100)
     results = []
     max_problems = length(problems)
     for (i, prob_name) in enumerate(problems)
         println("\n" * "="^60)
         println("Problem $i/$max_problems: $prob_name")
+        # Julia block-buffers stdout when it is redirected to a file, so without flushing a run
+        # that is merely slow is indistinguishable from one that has hung — which cost a whole
+        # 7-hour run to diagnose once.
+        flush(stdout)
 
         # Create problem instance
         local nlp
@@ -90,6 +98,7 @@ function nlls_benchmark_with_delay(problems, solvers; max_iter = 100)
         problem_results = []
         for (solver_name, solver_func) in solvers
             print("    Testing $solver_name... ")
+            flush(stdout)
             result =
                 test_solver_on_problem(solver_name, solver_func, prob_data, nlp, max_iter)
             if result.success && result.converged
@@ -100,6 +109,7 @@ function nlls_benchmark_with_delay(problems, solvers; max_iter = 100)
                 status = result.success ? "no convergence" : "failed"
                 println("✗ $status")
             end
+            flush(stdout)
             result_with_problem = merge(
                 result,
                 (

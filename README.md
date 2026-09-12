@@ -150,7 +150,14 @@ tolerance value — the tolerances only decide when a solver stops polishing.
 
 Iteration budget: **`max_iter = 400`** for every iterative solver (passed explicitly,
 including to LSO whose own default is 1000). Hidden wall-clock caps are removed
-(TRON and NLLSsolver default to a 30 s `max_time`; the suite lifts both).
+(TRON and NLLSsolver default to a 30 s `max_time`; the suite lifts both). One cap is
+added deliberately, and only in the delay benchmark: Optim-BFGS and Optim-L-BFGS get
+`time_limit = 900` (15 minutes), because the `iterations` budget does not bound the
+gradient evaluations their line search makes, and at 200 ms per gradient those two rows
+were half of that benchmark's entire runtime. It is three orders of magnitude above the
+scale at which they normally finish, a capped run is scored on the cost it reached, and
+`benchmark/AUDIT.md` sets out why this is not the same as the hidden defaults that were
+removed.
 
 ### Known limitations (read before citing numbers)
 
