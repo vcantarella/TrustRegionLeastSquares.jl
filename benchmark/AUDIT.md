@@ -229,6 +229,36 @@ Note that `TRLS` and `LM-QR-scaled` here are QR strategies, not the LQ family th
 minimum-norm steps; `internal_variants.jl` scores those, where `LM-LQ` leads on min-norm rate at 0.97
 against 0.80 for the scaled variants.
 
+Delay figure (88 problems, 200 ms per Jacobian and gradient evaluation; 4 h 59 m of wall clock):
+
+| Solver | Success % | Median iters | Total time | vs SciPy |
+|---|---|---|---|---|
+| TRLS | **100.0** | 12.5 | 425.8 s | **1.16x** |
+| Scipy-LeastSquares | **100.0** | 13.0 | 495.7 s | 1.00x |
+| NLLSsolver-LM | 97.7 | 13.5 | 444.3 s | 1.12x |
+| NonlinearSolve-TR | 94.3 | 33.0 | 566.0 s | 0.88x |
+| NonlinearSolve-LM | 94.3 | 39.0 | 780.2 s | 0.64x |
+| Optim-L-BFGS | 90.9 | 33.0 | 2567.6 s | 0.19x |
+| Optim-BFGS | 89.8 | 32.0 | 2330.1 s | 0.21x |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 419.5 s | 1.18x (own set) |
+| LsqFit-LM | 84.1 | n/a | 518.2 s | 0.96x (own set) |
+
+The 2026-08-08 headline was TRLS tying SciPy at 1.0x; it now leads at 1.16x, with the same 100% and
+the same 12.5 median iterations. Every competitor's success rate is unchanged to the tenth of a
+percent, so the movement is this package's, not the suite's.
+
+**Cap audit.** The 15-minute cap bound on 2 cells out of 792, both `tp297`: Optim-BFGS at 910.8 s
+(273 iterations) and Optim-L-BFGS at 903.5 s (267), each stopped at a cost of about -1e-14, which is
+machine zero for this problem. Both still score as successes since that matches the best cost found,
+and the Optim success rates are **identical to the uncapped August run** (89.8% and 90.9%). The cap
+therefore changed two `converged` flags and two recorded times, and no outcome.
+
+**Upstream slowdown worth recording.** `tp297` / Optim-L-BFGS took 55.7 s in August under Optim 2.2.1
+and exceeded 900 s here under 2.3.1, at 267 iterations against 189; the BFGS cell went from 577 s to
+over 900 s. Nothing in this package touches that path. It is also the reason the cap earns its place
+now when August would not have needed it, and the likely reason the first attempt at this re-run was
+slower than the August one.
+
 ### Historical: 2026-08-08 run
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |

@@ -12,9 +12,10 @@ It is built for the case where **evaluating the model is the expensive part** �
 ODE solve, a PDE solve, a simulation — so the solver spends effort per iteration (exact trust-region
 subproblem solves, careful factorizations) to keep the number of Jacobian evaluations down. On the
 88-problem NLSProblems set it solves every problem, at a median of 12.5 iterations, and it is the
-only solver besides SciPy to do so — in 0.28 s of cumulative solve time against SciPy's 1.33 s. On
-microsecond-scale toy problems, lighter wrappers are faster per problem; that trade is deliberate
-and is documented in the benchmarks below.
+only solver besides SciPy to do so. When each Jacobian evaluation is made to cost 200 ms, standing in
+for a model that is an ODE solve or a simulation, it has both the lowest median and the lowest
+cumulative solve time of any solver at 100% success. On microsecond-scale toy problems, lighter
+wrappers are faster per problem; that trade is deliberate and is documented in the benchmarks below.
 
 - **Unconstrained and box-constrained** least squares through one entry point.
 - **Four factorization strategies**, including minimum-norm steps for underdetermined problems.
@@ -240,9 +241,41 @@ On these small, microsecond-scale problems, per-iteration overhead dominates and
 To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient J′r requires the Jacobian, so gradient-based solvers must pay it too).
 
 ![NLLS solver performance with expensive Jacobians](docs/src/assets/benchmarks/nlls_solver_performance_delay.png)
-*Figure 2: Same experiment with 200 ms per Jacobian/gradient evaluation (same 88 problems; colors and markers as in Figure 1). Evaluation count now dominates wall-clock and the few-iteration LM methods cluster at the front: "TRLS" leads the profile and ties the SciPy baseline (1.0×) as the only pair at 100% success, with NLLSsolver effectively tied on speed (1.0×) at 98%. NonlinearSolve-LM pays its stall-confirmation tail (0.63×), and line-search quasi-Newton methods (BFGS/L-BFGS) drop to 0.22–0.25× because their line searches evaluate the gradient several times per iteration. LSO's 1.2× is computed over its own smaller successful set (88% of problems).*
+*Figure 2: Same 88 problems with 200 ms per Jacobian and gradient evaluation; colors and markers as in Figure 1. Evaluation count now dominates wall-clock, and the few-iteration LM methods cluster at the front.*
 
-This is the regime the solver is designed for: **fewer steps beat cheaper steps** as soon as the model is expensive.
+| Solver | Success % | Median iterations | Median time | Cumulative time | vs SciPy |
+|---|---|---|---|---|---|
+| **TRLS** | **100.0** | 12.5 | 2.34 s | 425.8 s | **1.16×** |
+| Scipy-LeastSquares | **100.0** | 13.0 | 2.66 s | 495.7 s | 1.00× |
+| NLLSsolver-LM | 97.7 | 13.5 | 2.75 s | 444.3 s | 1.12× |
+| NonlinearSolve-TR | 94.3 | 33.0 | 3.05 s | 566.0 s | 0.88× |
+| NonlinearSolve-LM | 94.3 | 39.0 | 5.08 s | 780.2 s | 0.64× |
+| Optim-L-BFGS | 90.9 | 33.0 | 8.43 s | 2567.6 s | 0.19× |
+| Optim-BFGS | 89.8 | 32.0 | 9.15 s | 2330.1 s | 0.21× |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 2.64 s | 419.5 s | 1.18× † |
+| LsqFit-LM | 84.1 | not exposed | 2.95 s | 518.2 s | 0.96× † |
+
+† computed over that solver's own smaller successful set, so not comparable with the 100% rows.
+
+This is the regime the solver is designed for: **fewer steps beat cheaper steps** once the model is
+expensive. The ordering inverts relative to Figure 1 — the lightest wrappers no longer win, because
+wrapper overhead is now invisible next to a 200 ms evaluation, and what is left is how many
+evaluations each method needs. TRLS has both the lowest median time and the lowest cumulative time of
+any solver at 100% success.
+
+The line-search quasi-Newton methods pay the most, at roughly a fifth of the baseline's throughput:
+their line searches evaluate the gradient several times per iteration, and every one of those costs
+200 ms. That is the honest shape of the trade, and it is why those two rows carry a 15-minute
+wall-clock cap here (see Benchmark limitations). **The cap bound on two cells of 792**, both `tp297`,
+where BFGS and L-BFGS were still iterating at a cost of about −1e-14 — machine zero — and were
+recorded as not converged at 910.8 s and 903.5 s. Both still count as successes because the cost
+matches the best found, and **the Optim success rates are identical to the uncapped August run**
+(89.8% and 90.9%), so the cap changed no outcome.
+
+One dependency change worth recording: `tp297` with Optim-L-BFGS took 55.7 s in August under Optim
+2.2.1 and exceeded 900 s here under 2.3.1, at 267 iterations against 189. The same cell for BFGS went
+from 577 s to over 900 s. Nothing in this package touches that path, so it is an upstream change; it
+is also why the cap earns its place now when it would not have been needed before.
 
 #### Underdetermined problems
 
