@@ -43,7 +43,7 @@ x, f, g, iter = lm_trust_region!(
 - [`LQStrategy`](@ref) and [`LQCholStrategy`](@ref) are for underdetermined problems (rows ≤ cols)
   and return the minimum-norm step.
 - [`JacobianScaling`](@ref) applies Moré's non-decreasing column-norm scaling, which is what makes
-  badly scaled problems tractable.
+  badly scaled problems tractable. But may introduce ill-condition,
 
 ## Box constraints
 

@@ -11,6 +11,8 @@ DocMeta.setdocmeta!(
 # Add titles of sections and overrides page titles
 const titles = Dict(
     # "10-tutorials" => "Tutorials", # example folder title
+    "10-theory" => "Theory",
+    "15-benchmarks.md" => "Benchmarks",
     "20-bibliography.md" => "Bibliography",
     "91-developer.md" => "Developer docs",
     "95-reference.md" => "API reference",
