@@ -4,7 +4,7 @@ CurrentModule = TrustRegionLeastSquares
 
 # Theory
 
-Throughout, the residual is $r: \mathbb{R}^n \to \mathbb{R}^m$ and its Jacobian $J$ is $m \times n$:
+>Throughout, the residual is $r: \mathbb{R}^n \to \mathbb{R}^m$ and its Jacobian $J$ is $m \times n$:
 **$m$ residuals, $n$ parameters**. A problem is *overdetermined* when $m > n$ and *underdetermined*
 when $m < n$.
 
@@ -47,8 +47,7 @@ method to constrain the solution of the subproblem:
 \min_p \frac{1}{2} \|J p + r\|^2 \quad \text{subject to} \quad \|p\| \leq \Delta .
 ```
 
-The model is only trusted inside a ball of radius $\Delta$, because it was built from derivatives at
-the current iterate and says nothing reliable far from it.
+The idea behind it is that subproblem is trustworth is only around the current point (a ball of radius $\Delta$).the subproblem was built from derivatives atthe current iterate and therefore it is not reliable far from it.
 
 This arrives at the following optimality conditions ([[NW06]](@ref bibliography) Theorem 4.1): $p$
 solves the subproblem if and only if there is a $\lambda \geq 0$ with
@@ -57,10 +56,13 @@ solves the subproblem if and only if there is a $\lambda \geq 0$ with
 (J^T J + \lambda I) p = -J^T r , \qquad \lambda (\Delta - \|p\|) = 0 ,
 ```
 
-and $J^TJ + \lambda I$ positive semidefinite. The second condition is the interesting one: either
-$\lambda = 0$ and the unconstrained step already fits inside the region, or the step sits exactly on
+and $J^TJ + \lambda I$ positive semidefinite.
+
+The second condition states that either
+$\lambda = 0$, the unconstrained step already fits inside the region, or the step sits exactly on
 the boundary, $\|p\| = \Delta$.
 
+### Exact Trust Region Algorithm
 The main algorithm consists of:
 
 1. Compute $r(x_k)$ and $J(x_k)$ at the current iterate.
@@ -118,8 +120,6 @@ nonzeros), which is usually good enough for a nonlinear least-squares step.
 
 More importantly, the QR route is numerically better behaved than a Cholesky factorization of
 $J^TJ$, because forming $J^TJ$ **squares the condition number**:
-$\kappa(J^TJ) = \kappa(J)^2$. A Jacobian with $\kappa(J) = 10^8$ — not unusual in a model fit —
-gives a normal matrix at the edge of what double precision can factorize at all.
 
 When the Gauss–Newton step falls outside the trust region, we need the damped system
 
@@ -143,18 +143,16 @@ QR of the augmented matrix $[J;\ \sqrt{\lambda} I]$ and never square anything. T
 
 [`QRCholStrategy`](@ref) is similar, but factorizes $(J^TJ + \lambda I)$ by Cholesky instead,
 assuming the $\lambda$ term improves the conditioning enough to make that safe. `cholesky` is much
-faster than QR — it is the default for that reason — but the assumption has a limit: past roughly
-$\kappa(J) = 10^{12}$ the damped matrix is positive definite in exact arithmetic and numerically
-indefinite in practice, and the factorization fails.
+faster than QR — it is the default for that reason. Ill-conditioned matrices can still occur, which are numerically
+indefinite in practice, and the factorization fails. In that case it is better to rely on `QRStrategy`.
 
 ### LQ and LQChol
 
-Now suppose the system is **underdetermined**: $J$ has fewer rows than columns ($m < n$), i.e. there
+When the system is **underdetermined**: $J$ has fewer rows than columns ($m < n$), i.e. there
 are more parameters than residuals. Then $Jp = -r$ has infinitely many solutions. Any two of them
-differ by a vector in the null space of $J$, which has dimension $n - m$, and the model cannot tell
-them apart: every one of them predicts the same residual.
+differ by a vector in the null space of $J$, which has dimension $n - m$.
 
-The natural choice is the **minimum-norm solution**, the one that moves the least:
+In that case the **minimum-norm solution**, the one that moves the least:
 
 ```math
 p^\star = \arg\min \|p\| \quad \text{subject to} \quad J p = -r .
@@ -169,14 +167,13 @@ residuals say nothing about, which is what keeps the iterates from drifting on t
 The solution to that constrained problem is
 
 ```math
-p^\star = J^T (J J^T)^{-1} (-r) = J^{+} (-r) ,
+p^\star = J^T (J J^T)^{-1} (-r),
 ```
 
-with $J^{+}$ the Moore–Penrose pseudoinverse. Note what changed: the matrix to invert is $J J^T$,
-which is $m \times m$, rather than $J^TJ$, which is $n \times n$. When $n \gg m$ — many parameters,
-few residuals — that is the difference between a small dense solve and an impossible one.
+Note that the matrix to invert is $J J^T$,
+which is $m \times m$, rather than $J^TJ$, which is $n \times n$. When $n \gg m$ this means solving a much smaller problem.
 
-We do not form $J J^T$ either. Take a column-pivoted QR of the **transpose**,
+In the LQ strategy, we do not form $J J^T$ either. Take a column-pivoted QR of the **transpose**,
 
 ```math
 J^T P = Q R \quad \Longleftrightarrow \quad J = P R^T Q^T ,
@@ -209,8 +206,9 @@ orthogonal decomposition* — recovers the minimum-norm solution in that case to
 
 #### The damped step
 
-For the damped system the same trick works, and it is neater than it looks. Look for a step of the
-form $p = J^T z$. Then
+For the damped system the same trick works.
+
+First thing is to replace in the damped newton equation $p$ for $J^T z$. Then:
 
 ```math
 (J^T J + \lambda I) J^T z = J^T (J J^T + \lambda I) z ,
@@ -228,33 +226,25 @@ Three things fall out of this at once:
 - It is positive definite for any $\lambda > 0$, **whatever the rank of $J$**. The damping does the
   regularizing that the underdetermined problem needs anyway.
 - $p = J^Tz$ lies in the range of $J^T$, which is the orthogonal complement of the null space of $J$.
-  So the step is automatically the *regularized minimum-norm* one — we get the minimum-norm property
-  for free, rather than imposing it.
+  So the step is automatically the *regularized minimum-norm step*.
 
-With the diagonal scaling $D$ in place, the same substitution reads $p = D^{-2} J^T z$ with
-
-```math
-(J D^{-2} J^T + \lambda I) z = -r .
-```
 
 The two strategies differ only in how that system is solved:
 
-- [`LQCholStrategy`](@ref) forms $J D^{-2} J^T + \lambda I$ and factorizes it by Cholesky. It is
+- [`LQCholStrategy`](@ref) forms $J J^T + \lambda I$ and factorizes it by Cholesky. It is
   $m \times m$ and fast, and it squares the condition number just as `QRChol` does.
 - [`LQStrategy`](@ref) avoids that by a QR of the augmented matrix
-  $[\,D^{-1}J^T;\ \sqrt{\lambda} I\,]$, using the same identity as before:
+  $[J^T;\ \sqrt{\lambda} I\,]$, using the same identity as before:
 
 ```math
-\begin{bmatrix} D^{-1} J^T \\ \sqrt{\lambda} I \end{bmatrix}^T
-\begin{bmatrix} D^{-1} J^T \\ \sqrt{\lambda} I \end{bmatrix}
-= J D^{-2} J^T + \lambda I ,
+\begin{bmatrix} J^T \\ \sqrt{\lambda} I \end{bmatrix}^T
+\begin{bmatrix} J^T \\ \sqrt{\lambda} I \end{bmatrix}
+= J J^T + \lambda I ,
 ```
 
-  so its $R$ satisfies $R^TR = J D^{-2} J^T + \lambda I$ without the product ever being formed.
+  so its $R$ satisfies $R^TR = J J^T + \lambda I$ without the product ever being formed.
 
 The idea of solving the underdetermined LM step through $J J^T$ with an LQ factorization is from
 [[CJK26]](@ref bibliography) Appendix B, pointed out in [[SGJ26]](@ref bibliography).
 
-> Which to use: `LQChol` is the faster of the two and the one to reach for first; switch to `LQ` if
-> the Jacobian is badly conditioned. Note that both are only defined for $m \leq n$ — for an
-> overdetermined problem they will throw, and you want the QR pair instead.
+> `LQChol` is the faster of the two; switch to `LQ` if the Jacobian is badly conditioned. 
