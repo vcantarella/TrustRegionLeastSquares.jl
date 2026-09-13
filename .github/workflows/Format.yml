@@ -31,7 +31,7 @@ jobs:
         run: |
           julia -e '
             using Pkg
-            Pkg.add(PackageSpec(name = "JuliaFormatter", version = "2.1"))
+            Pkg.add("JuliaFormatter") #old version: PackageSpec(name = "JuliaFormatter", version = "2.1"))
             using JuliaFormatter
             format(".") || begin
                 write(stdout, read(`git diff`, String))
