@@ -150,8 +150,8 @@ row-copy per evaluation. Returns `pd` untouched when it already has at most `k` 
 function crop_nls_functions(
     pd,
     k;
-    rows = k == 1 ? [1] : round.(Int, range(1, pd.n, length = k)), 
-# range(1, n, length = 1) throws, so a single kept row is row 1.
+    rows = k == 1 ? [1] : round.(Int, range(1, pd.n, length = k)),
+    # range(1, n, length = 1) throws, so a single kept row is row 1.
 )
     pd.n <= k && return pd
     rbuf = zeros(pd.n)
