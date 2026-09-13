@@ -1,6 +1,7 @@
 using TrustRegionLeastSquares
 using Documenter
 using Documenter: Remotes
+using DocumenterCitations
 
 DocMeta.setdocmeta!(
     TrustRegionLeastSquares,
@@ -68,8 +69,13 @@ function list_pages()
     return ["index.md"; pages_list]
 end
 
+# The :alpha style regenerates the keys already used in the source comments — NW06, Mor78, CJK26
+# and the rest — from the entries themselves, so `refs.bib` is the single place a reference lives.
+bib = CitationBibliography(joinpath(@__DIR__, "src", "refs.bib"); style = :alpha)
+
 makedocs(;
     modules = [TrustRegionLeastSquares],
+    plugins = [bib],
     authors = "vcantarella <vcantarella@gmail.com> and contributors",
     repo = Remotes.GitHub("vcantarella", "TrustRegionLeastSquares.jl"),
     sitename = "TrustRegionLeastSquares.jl",

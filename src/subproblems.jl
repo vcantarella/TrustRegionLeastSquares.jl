@@ -7,7 +7,7 @@
 #
 # Each strategy differs only in how the damped system is factorized: the QR strategies follow the
 # augmented-matrix implementation of [NW06] §10.3, and the LQ strategies solve through J Jᵀ for
-# underdetermined problems, following [CJK26] Appendix B and [SGJ26].
+# underdetermined problems, following [CJK26] Appendix B and [Joh26].
 
 """
     solve_subproblem(J, f, Δ, cache, λ_old; maxiters = 10, θ = 1e-4) -> λ
@@ -140,7 +140,7 @@ function solve_subproblem(J, f, Δ, cache::QRCache, λ_old; maxiters = 10, θ = 
     return λ_of_p
 end
 
-# Wide J ([CJK26] Appendix B, [SGJ26]): substitute p = D⁻² Jᵀ z, so that the damped system becomes
+# Wide J ([CJK26] Appendix B, [Joh26]): substitute p = D⁻² Jᵀ z, so that the damped system becomes
 # (JᵀJ + λD²) p = -Jᵀf  ⇔  (J D⁻² Jᵀ + λI) z = -f, which is rows × rows rather than cols × cols and
 # full rank even when J is not. The step it returns is the regularized minimum-norm one.
 # Then ‖Dp‖² = zᵀ J D⁻² Jᵀ z and pᵀD²(JᵀJ + λD²)⁻¹D²p = zᵀz − λ zᵀ(J D⁻² Jᵀ + λI)⁻¹z.

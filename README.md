@@ -103,7 +103,7 @@ where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `�
 ```
 for a Lagrange multiplier `λ ≥ 0` ([[NW06]](#references) Theorem 4.1), found by safeguarded Newton iteration on `φ₂(λ) = 1/Δ - 1/‖Dp(λ)‖` — a reformulation chosen because it is nearly linear in `λ` near the root, where `‖Dp(λ)‖ = Δ` is not ([[NW06]](#references) §4.3), with the bracket and safeguard of [[Mor78]](#references). The factorization of `J` is computed once per iteration and reused across candidate `λ` values — this is why the solver can afford exact subproblem solves while keeping Jacobian evaluations to a minimum.
 
-**Underdetermined problems** [[CJK26]](#references) Appendix B, [[SGJ26]](#references). With fewer residuals than parameters, `JᵀJ` is large and rank-deficient. The `LQStrategy` and `LQCholStrategy` variants instead solve the damped system through the small, full-rank `J Jᵀ`, which returns a regularized minimum-norm step, and use an LQ factorization so that the condition number is not squared.
+**Underdetermined problems** [[CJK26]](#references) Appendix B, [[Joh26]](#references). With fewer residuals than parameters, `JᵀJ` is large and rank-deficient. The `LQStrategy` and `LQCholStrategy` variants instead solve the damped system through the small, full-rank `J Jᵀ`, which returns a regularized minimum-norm step, and use an LQ factorization so that the condition number is not squared.
 
 **Bounds** [[MMP09]](#references), with the affine scaling of [[CL96]](#references). The trust region is measured in the affine-scaled norm `‖D_k |v(x)|^{-1/2} p‖ ≤ Δ_k`, where `|v_i|` is the distance from `x_i` to the bound its negative gradient points at, so a variable near an active bound can barely move towards it. The resulting step is projected onto the box, and accepted only if it achieves a fixed fraction of the decrease of a generalized Cauchy step along the scaled steepest descent; otherwise it is moved towards that Cauchy step until it does. That is the generalized Cauchy step of [[MMP09]](#references) eq. (8) and its fraction-of-decrease condition (11), and it is what makes the method globally convergent to a point satisfying the bound-constrained first-order conditions, measured by the projected gradient `‖x - P(x - g)‖`.
 
@@ -179,7 +179,7 @@ which result.
   [doi:10.1364/OE.579219](https://doi.org/10.1364/OE.579219) ·
   [arXiv:2504.10219](https://arxiv.org/abs/2504.10219) — Appendix B, "Underdetermined
   Levenberg–Marquardt algorithm", which the `LQStrategy` and `LQCholStrategy` variants implement.
-- **[SGJ26]** S. G. Johnson, reply in ["Should NonlinearLeastSquaresProblem be used for deep
+- **[Joh26]** S. G. Johnson, reply in ["Should NonlinearLeastSquaresProblem be used for deep
   learning?"](https://discourse.julialang.org/t/should-nonlinearleastsquaresproblem-be-used-for-deep-learning/135793/4),
   Julia Discourse, 23 February 2026 — the post that prompted the LQ strategies and points at
   [CJK26].

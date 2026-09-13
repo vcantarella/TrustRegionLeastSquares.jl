@@ -33,7 +33,7 @@ The `TRLS` row runs the `QRStrategy` variant, which is what the figures show. Th
 
 ## Metrics
 
-Figures report **Dolan–Moré performance profiles** [[DM02]](@ref bibliography): for each solver and problem, the performance ratio τ = time / best solver's time on that problem; the curve shows the fraction of all problems solved within τ. The height at τ = 1 reads as "how often is this solver the fastest", the right-hand asymptote as robustness. The summary table gives the success rate and the cumulative-time speed-up relative to the SciPy baseline.
+Figures report **Dolan–Moré performance profiles** [DM02](@cite): for each solver and problem, the performance ratio τ = time / best solver's time on that problem; the curve shows the fraction of all problems solved within τ. The height at τ = 1 reads as "how often is this solver the fastest", the right-hand asymptote as robustness. The summary table gives the success rate and the cumulative-time speed-up relative to the SciPy baseline.
 
 ## Running it
 
@@ -136,7 +136,7 @@ rate to 0.80 — scaling pulls the step away from the minimum-norm direction.
 
 ### Hard exponential fits, where this solver does not win
 
-Six deliberately nasty exponential-fitting problems from Lukšan [[Luk96]](@ref bibliography), run both in
+Six deliberately nasty exponential-fitting problems from Lukšan [Luk96](@cite), run both in
 their original parameterization and with `x = exp(y)`. Parameters span orders of magnitude: A.3
 starts at `[0.02, 4000, 250]` and A.5 at `[1e5, 1e5, 1.08, 1.31]`.
 

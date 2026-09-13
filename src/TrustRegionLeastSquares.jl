@@ -41,7 +41,7 @@ comments cite these by the keys below, with a section, algorithm or equation num
   solve the damped system through the small `J Jᵀ` matrix rather than `JᵀJ`, giving a regularized
   minimum-norm step, and use an LQ factorization so the condition number is not squared. This is
   what [`LQStrategy`](@ref) and [`LQCholStrategy`](@ref) implement.
-- **[SGJ26]** S. G. Johnson, reply in "Should NonlinearLeastSquaresProblem be used for deep
+- **[Joh26]** S. G. Johnson, reply in "Should NonlinearLeastSquaresProblem be used for deep
   learning?", Julia Discourse, 23 February 2026.
   <https://discourse.julialang.org/t/should-nonlinearleastsquaresproblem-be-used-for-deep-learning/135793/4>
   The post that prompted the LQ strategies here: *"one can devise a variant of Levenberg–Marquardt

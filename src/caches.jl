@@ -24,7 +24,7 @@ struct QRStrategy <: Strategy end
 """
     LQStrategy()
 
-For underdetermined problems (rows ≤ cols), following [CJK26] Appendix B and [SGJ26]: the damped
+For underdetermined problems (rows ≤ cols), following [CJK26] Appendix B and [Joh26]: the damped
 system is solved through the small, full-rank `J D⁻² Jᵀ` rather than `JᵀJ`, and the LQ
 factorization keeps the condition number unsquared. The Gauss–Newton step is the minimum-norm
 solution, from a column-pivoted QR of `Jᵀ` (a complete orthogonal decomposition when

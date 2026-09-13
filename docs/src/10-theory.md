@@ -4,9 +4,7 @@ CurrentModule = TrustRegionLeastSquares
 
 # Theory
 
->Throughout, the residual is $r: \mathbb{R}^n \to \mathbb{R}^m$ and its Jacobian $J$ is $m \times n$:
-**$m$ residuals, $n$ parameters**. A problem is *overdetermined* when $m > n$ and *underdetermined*
-when $m < n$.
+>Throughout, the residual is $r: \mathbb{R}^n \to \mathbb{R}^m$ and its Jacobian $J$ is $m \times n$: **$m$ residuals, $n$ parameters**. A problem is *overdetermined* when $m > n$ and *underdetermined* when $m < n$.
 
 ## Nonlinear Least-squares
 
@@ -49,7 +47,7 @@ method to constrain the solution of the subproblem:
 
 The idea behind it is that subproblem is trustworth is only around the current point (a ball of radius $\Delta$).the subproblem was built from derivatives atthe current iterate and therefore it is not reliable far from it.
 
-This arrives at the following optimality conditions ([[NW06]](@ref bibliography) Theorem 4.1): $p$
+This arrives at the following optimality conditions [NW06; Theorem 4.1](@cite): $p$
 solves the subproblem if and only if there is a $\lambda \geq 0$ with
 
 ```math
@@ -83,7 +81,7 @@ package solves it by safeguarded Newton iteration on
 
 rather than on $\|p(\lambda)\| - \Delta$ directly. The reason is that $\varphi_2$ is nearly linear in
 $\lambda$ near its root, so Newton's method converges in a handful of steps
-([[NW06]](@ref bibliography) §4.3), while $\|p(\lambda)\|$ is highly nonlinear there.
+[NW06; §4.3](@cite), while $\|p(\lambda)\|$ is highly nonlinear there.
 
 Each of those steps needs the damped system solved again at a new $\lambda$ — which is what makes
 the choice of factorization worth thinking about.
@@ -245,6 +243,6 @@ The two strategies differ only in how that system is solved:
   so its $R$ satisfies $R^TR = J J^T + \lambda I$ without the product ever being formed.
 
 The idea of solving the underdetermined LM step through $J J^T$ with an LQ factorization is from
-[[CJK26]](@ref bibliography) Appendix B, pointed out in [[SGJ26]](@ref bibliography).
+[CJK26; Appendix B](@cite), pointed out in [Joh26](@cite).
 
 > `LQChol` is the faster of the two; switch to `LQ` if the Jacobian is badly conditioned. 
