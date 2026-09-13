@@ -16,7 +16,7 @@ TrustRegionLeastSquares = "21ca2098-f897-4540-9ab3-b13ed390dd37"
 Aqua = "0.8"
 Chairmarks = "1.3"
 ForwardDiff = "0.10, 1"
-JET = "0.9, 0.10"
+JET = "0.9, 0.10, 0.11, 0.12"
 TestItemRunner = "1.3"
 TestItems = "1"
 
