@@ -10,17 +10,17 @@ Features:
 * box constraints
 * underdetermined problems
 * badly scaled variables
-* Pure Julia, one dependency(`LinearAlgebra`).
+* Pure Julia, one dependency (`LinearAlgebra`).
 
 
-Solving the trust region subproblem is computationally more costly than using other approaches such as using heuristics to update the LM dampening parameter (e.g., NonlinearSolve.LevenbergMarquadt) or solving the subproblem approximately (NonlinearSolve.TrustRegion, which uses the dogleg method). However, the exact TR solves through careful factorizations, which keep the number of Jacobian evaluations down. This is specially useful in real-world case problems such as solving ODE, PDE, models, or a simulation, where the residual and Jacobian calculation dominate the calculation time. And it is often more robust than other approaches (see Benchmarks below).
+Solving the trust-region subproblem exactly is computationally more costly than the alternatives, such as updating the LM damping parameter by a heuristic (e.g. `NonlinearSolve.LevenbergMarquardt`) or solving the subproblem approximately (`NonlinearSolve.TrustRegion`, which uses the dogleg method). But the exact solve goes through careful factorizations, which keeps the number of Jacobian evaluations down. That is especially useful in real-world problems such as fitting an ODE or PDE model, or a simulation, where the residual and Jacobian evaluations dominate the run time. It is also often more robust than the alternatives (see Benchmarks below).
 
-The current solution scheme include the following characteristics:
+The current solution scheme has the following characteristics:
 
 - **Unconstrained and box-constrained** least squares through one entry point.
 - **Four factorization strategies**, including minimum-norm steps for underdetermined problems.
 - **Moré's diagonal scaling** for variables that differ by orders of magnitude.
-- **A reproducible benchmark suite** comparing it against nine other solvers across the Julia and  Python ecosystems.
+- **A reproducible benchmark suite** comparing it against nine other solvers across the Julia and Python ecosystems.
 
 
 ## Installation
@@ -39,7 +39,7 @@ Pkg.add("TrustRegionLeastSquares")
 
 ### Usage
 
-Define the residual ()`res!(f, x)`) and Jacobian (`jac!(J, x)`) functions **in-place**:
+Define the residual (`res!(f, x)`) and Jacobian (`jac!(J, x)`) functions **in-place**:
 
 ```julia
 using TrustRegionLeastSquares
@@ -48,15 +48,15 @@ using TrustRegionLeastSquares
 rosenbrock!(f, x) = (f[1] = 10 * (x[2] - x[1]^2); f[2] = 1 - x[1]; f)
 rosenbrock_jac!(J, x) = (J[1, 1] = -20 * x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
 ```
-Call the entry function to solve the nonlinear least squares problem
-define as positional arguments the initial guess, `x0`, and the number of residuals `n`:
+Call the entry function to solve the nonlinear least-squares problem, giving as positional
+arguments the initial guess `x0` and the number of residuals `n`:
 
 ```julia
 x, f, g, iter = lm_trust_region!(rosenbrock!, rosenbrock_jac!, [-1.2, 1.0], 2)
 # x ≈ [1.0, 1.0]
 ```
 
-A different factorization strategy and variable scaling are positional arguments:
+A different factorization strategy and variable scaling are also positional arguments:
 
 ```julia
 x, f, g, iter = lm_trust_region!(
@@ -66,14 +66,14 @@ x, f, g, iter = lm_trust_region!(
 )
 ```
 
-existing factorization strategys are:
+The existing factorization strategies are:
 
-- `QRCholStrategy()`: solves the newton step via QR factorization and the damped newton via cholesky factorization. It is generally robust and fast. It is the default choice.
-- `QRStrategy()`: solves both newtown and damped-newton steps via QR, more robust than QRChol, but a bit slower. Recommended for very ill-conditioned problems.
-- `LQCholStrategy()`: recommended method for undertermined systems (more parameters than residuals). Instead of the basic solution, the newton and damped newton solve the minimum norm solution. Solves the newton step via LQ factorization of $J$ (QR of $J^T$) and the cholesky factorization of the dampend minimum norm solution ($(JJ^T + \lambda I)p = f$).
-- `LQStrategy()`: same as LQChol, but solves both newton and damped newton with the LQ factorization. A bit slower than LQChol.
+- `QRCholStrategy()`: solves the Newton step via QR factorization and the damped Newton step via Cholesky factorization. It is generally robust and fast, and it is the default choice.
+- `QRStrategy()`: solves both the Newton and the damped-Newton step via QR. More robust than `QRChol`, but a bit slower. Recommended for very ill-conditioned problems.
+- `LQCholStrategy()`: the recommended method for underdetermined systems (more parameters than residuals). Instead of a basic solution, the Newton and damped-Newton steps return the minimum-norm solution. It solves the Newton step via the LQ factorization of $J$ (a QR of $J^T$), and the damped step via a Cholesky factorization of $J J^T + \lambda I$, substituting $p = J^T z$ so that $(J J^T + \lambda I) z = -f$ is the only system that has to be solved.
+- `LQStrategy()`: the same as `LQChol`, but solves both the Newton and the damped-Newton step with the LQ factorization. A bit slower than `LQChol`.
 
-default scaling is `NoScaling()`. It seems to be the general better choice. You can scale the problem by the Jacobian (`JacobianScaling()`) to improve the solution, but that can also make the problem ill-conditioned. I recommend that poorly conditioned solution be scaled at the residual and jacobian function definition by for exampling applying a `log` or `exp` tranformation to the variable `x`.
+The default scaling is `NoScaling()`, which seems to be the better choice in general. You can scale the problem by the Jacobian (`JacobianScaling()`) to improve the solution, but that can also make the problem ill-conditioned. For a poorly conditioned problem I would rather rescale it in the residual and Jacobian definitions themselves, for example by applying a `log` or `exp` transformation to the variable `x`.
 
 For box constraints, pass `lb` and `ub`. Here the upper bound on `x₁` moves the solution to `(0.5, 0.25)`, where `x₁` rests on its bound:
 
@@ -89,11 +89,11 @@ x, f, g, iter = lm_trust_region!(
 
 ### Methodology
 
-This package is an implementation of the nonlinear least-squares trust region method as described in Chapters 4 and 10 of Nocedal & Wright [[NW06]](#references). I have included extra reference sources for each part are named below and listed under [References](#references). The standard implementation is similar to the TRF method implemented in the function `least_squares()` in scipy, but we use carefully chosens factorizations (QR, cholesky and the minimum norm variants), against the scipy's svd solution, which has allowed this package to be significantly faster, without any penalty on robustness.
+This package implements the nonlinear least-squares trust-region method described in Chapters 4 and 10 of Nocedal & Wright [[NW06]](#references). The extra sources behind each part are named below and listed under [References](#references). The overall scheme is close to the TRF method of SciPy's `least_squares()`, but we use carefully chosen factorizations (QR, Cholesky and the minimum-norm variants) rather than SciPy's SVD, which makes this package significantly faster at no cost in robustness.
 
 **Trust region framework** [[NW06]](#references) Algorithm 4.1. At each iteration the algorithm minimizes a model of the objective `F(x) = 0.5 * ||f(x)||^2` around the current point:
 ```math
-min_p  || J_k p + f_k ||^2  \quad \text{subject to} \quad || D_k p || \le \Delta_k
+\min_p \| J_k p + f_k \|^2 \quad \text{subject to} \quad \| D_k p \| \le \Delta_k
 ```
 where `J_k` is the Jacobian, `f_k` the residuals, `D_k` a scaling matrix, and `Δ_k` the trust region radius.
 
@@ -112,19 +112,19 @@ for a Lagrange multiplier `λ ≥ 0` ([[NW06]](#references) Theorem 4.1), found 
 ### Setup
 
 ```julia
-using TrustRegionLeastSquares                           # v0.2 — this work
-import NonlinearSolve: TrustRegion, LevenbergMarquardt  # v4.20
+using TrustRegionLeastSquares                           # v0.1 — TRLS
+import NonlinearSolve: TrustRegion, LevenbergMarquardt  # v4.30
 import JSOSolvers: tron                                 # v0.14
 import LeastSquaresOptim: LevenbergMarquardt, QR        # v0.8
 import LsqFit: curve_fit                                # v0.16
-import NLLSsolver: levenbergmarquardt                   # v4.0
-import Optim: BFGS, LBFGS                               # v2.2
-import PRIMA: newuoa                                    # v0.2 — deriv-free
+import NLLSsolver: levenbergmarquardt                   # v4.1
+import Optim: BFGS, LBFGS                               # v2.3
+import PRIMA: newuoa, bobyqa                            # v0.2 — deriv-free
 scipy = pyimport("scipy")                               # SciPy 1.18 — TRF
 using NLSProblems                                       # v0.5 — test set
-using Makie                                             # plotting
+using CairoMakie                                        # plotting
 ```
-88 test problems from NLSProblems.jl; gtol, ftol = 1e-8 (see docs)
+88 test problems from NLSProblems.jl; `gtol`, `ftol` = 1e-8 (see docs).
 
 **Caveat: packages differ in termination criteria and interfaces, so timings are not perfectly apples-to-apples — per-solver settings in the repo docs.**
 
@@ -133,15 +133,15 @@ using Makie                                             # plotting
 *Figure 1: Performance profile and summary on the full unconstrained NLSProblems set (88 problems). TRLS and SciPy are the only solvers that reach a 100% success rate, and TRLS gets there in 0.283 s of cumulative solve time against SciPy's 1.335 s. Solvers with steeper early curves (NLLSsolver, LeastSquaresOptim) are faster per problem but plateau below 100%.*
 
 On these small, microsecond-scale problems, per-iteration overhead dominates and the lightest wrappers win the left side of the profile:
-- NLLSsolver solves its 97.7% faster than anyone else. Also the package enforces the use of StaticArrays — perhaps not a fair comparison.
-- Most julia packages have very fast solvers, which are about an order of magnitude faster than scipy's baseline method.
-- Only TRLS and  Scipy solve 100% of the problems to the minimum cost function reported.  In the comparison, TRLS is about 5x faster than scipy.
+- NLLSsolver solves its 97.7% faster than anyone else. The package also enforces the use of StaticArrays, so perhaps not a fair comparison.
+- Most Julia packages have very fast solvers, about an order of magnitude faster than SciPy's baseline method.
+- Only TRLS and SciPy solve 100% of the problems to the minimum cost reported. Of the two, TRLS is about 5× faster.
 
 
 
 #### Real-world benchmark: expensive evaluations
 
-To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient J′r requires the Jacobian, so gradient-based solvers must pay it too).
+To simulate a realistic model — where each Jacobian evaluation means re-solving an ODE/PDE or running a simulation — the second benchmark injects a 200 ms delay into every Jacobian *and* gradient evaluation (the gradient `Jᵀf` requires the Jacobian, so gradient-based solvers pay it too).
 
 ![NLLS solver performance with expensive Jacobians](docs/src/assets/benchmarks/nlls_solver_performance_delay.png)
 *Figure 2: Same 88 problems with 200 ms per Jacobian and gradient evaluation; colors and markers as in Figure 1. Evaluation count now dominates wall-clock, and the few-iteration LM methods cluster at the front.*

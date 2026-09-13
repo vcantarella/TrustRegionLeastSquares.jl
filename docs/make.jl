@@ -1,5 +1,6 @@
 using TrustRegionLeastSquares
 using Documenter
+using Documenter: Remotes
 
 DocMeta.setdocmeta!(
     TrustRegionLeastSquares,
@@ -70,7 +71,7 @@ end
 makedocs(;
     modules = [TrustRegionLeastSquares],
     authors = "vcantarella <vcantarella@gmail.com> and contributors",
-    repo = "https://github.com/vcantarella/TrustRegionLeastSquares.jl/blob/{commit}{path}#{line}",
+    repo = Remotes.GitHub("vcantarella", "TrustRegionLeastSquares.jl"),
     sitename = "TrustRegionLeastSquares.jl",
     format = Documenter.HTML(;
         canonical = "https://vcantarella.github.io/TrustRegionLeastSquares.jl",
