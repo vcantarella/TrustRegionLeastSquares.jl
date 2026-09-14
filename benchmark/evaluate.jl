@@ -3,11 +3,12 @@ using CairoMakie
 using Printf
 using Statistics
 
-# Directory where benchmark performance plots are written: the repo-root `test_plots/`,
-# resolved relative to THIS file (not the working directory) so scripts save to the same
-# place no matter where julia is launched from. Created on demand.
+# Directory where benchmark performance plots are written: `docs/src/assets/benchmarks/`, so the
+# figures the README and the docs show are the ones the scripts produce. Resolved relative to THIS
+# file (not the working directory) so scripts save to the same place no matter where julia is
+# launched from. Created on demand.
 function plots_dir()
-    dir = normpath(joinpath(@__DIR__, "..", "test_plots"))
+    dir = normpath(joinpath(@__DIR__, "..", "docs", "src", "assets", "benchmarks"))
     isdir(dir) || mkpath(dir)
     return dir
 end
@@ -27,6 +28,8 @@ end
 function compare_with_best(df::DataFrame; atol = 1e-4)
     # Use standard DataFrames - no macro BS
     df_proc = copy(df)
+    # A solve that violates its bounds cannot set the reference minimum for the others.
+    df_proc.final_cost = ifelse.(df_proc.bounds_satisfied, df_proc.final_cost, Inf)
 
     # Find minimum (best) solution for each problem, ignoring failed/NaN runs.
     min_solutions =
@@ -72,7 +75,7 @@ end
 # names not listed here (other scripts: TRF, PRIMA-BOBYQA, ...) get stable fallback
 # slots appended in sorted order.
 const SOLVER_ORDER = [
-    "This work",
+    "TRLS",
     "Optim-BFGS",
     "Optim-L-BFGS",
     "JSO-TRON",

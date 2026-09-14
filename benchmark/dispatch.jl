@@ -40,94 +40,44 @@ function NLLSsolver.computeresjacstatic(
     return r, J
 end
 
+# Wall-clock cap for the Optim quasi-Newton baselines, in seconds; see the Optim branch below for
+# why they alone carry one. Scripts may lower it: the delay benchmark sets 15 minutes.
+const OPTIM_TIME_LIMIT = Ref(NaN)
+
 function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_iter = 100)
     """Test a single solver on a problem"""
     try
-        if solver_name in [
-            "This work",   # poster label for LM-QR
-            "LM-QR",
-            "LM-QR-scaled",
-            "LM-SVD",
-            "LM-QR-Recursive",
-            "LM-QR-Recursive-Scaled",
-            "LM-QR-Scaled",
-            "LM-VCChol",
-        ]
-            # Use residual-Jacobian interface
-            if contains(solver_name, "scaled") || contains(solver_name, "Scaled")
-                scaling_strategy = nonlinearlstr.JacobianScaling()
-            else
-                scaling_strategy = nonlinearlstr.NoScaling()
-            end
-            if contains(solver_name, "Recursive")
-                subproblem_strategy = nonlinearlstr.QRrecursiveSolve()
-            elseif contains(solver_name, "QR") || solver_name == "This work"
-                subproblem_strategy = nonlinearlstr.QRSolve()
-            elseif contains(solver_name, "SVD")
-                subproblem_strategy = nonlinearlstr.SVDSolve()
-            else #EVDsolve
-                subproblem_strategy = nonlinearlstr.QRCholStrategy()
-            end
-
-            result = solver_func(
+        if solver_name == "TRLS" || startswith(solver_name, "LM-")
+            # TrustRegionLeastSquares. The label picks the variant: "TRLS" / "LM-QR" -> QRStrategy,
+            # "LM-QRChol" -> QRCholStrategy, "LM-LQ" / "LM-LQChol" -> the LQ family (residuals <=
+            # variables only); a "-scaled" suffix switches on JacobianScaling. Bounds are always
+            # passed: infinite bounds take the unconstrained path, finite ones the projected step.
+            scaling_strategy =
+                contains(lowercase(solver_name), "scaled") ? TRLS.JacobianScaling() :
+                TRLS.NoScaling()
+            subproblem_strategy =
+                contains(solver_name, "LQChol") ? TRLS.LQCholStrategy() :
+                contains(solver_name, "QRChol") ? TRLS.QRCholStrategy() :
+                contains(solver_name, "LQ") ? TRLS.LQStrategy() : TRLS.QRStrategy()
+            solve_once() = solver_func(
                 prob_data.residual_func!,
                 prob_data.jacobian_func!,
                 prob_data.x0,
                 prob_data.n,
                 subproblem_strategy,
                 scaling_strategy;
-                max_iter = max_iter,
-                gtol = 1e-8,
-                ftol = 1e-8,
-            )
-            #run one more time for timing:
-
-            t = minimum(
-                @be solver_func(
-                    prob_data.residual_func!,
-                    prob_data.jacobian_func!,
-                    prob_data.x0,
-                    prob_data.n,
-                    subproblem_strategy,
-                    scaling_strategy;
-                    max_iter = max_iter,
-                    gtol = 1e-8,
-                    ftol = 1e-8,
-                )
-            ).time
-
-            x_opt, r_opt, g_opt, iterations = result
-            final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-8
-        elseif solver_name in ["TRF", "TRF-scaled"]
-            scaling_strategy = nonlinearlstr.ColemanandLiScaling()
-
-            result = solver_func(
-                prob_data.residual_func,
-                prob_data.jacobian_func,
-                prob_data.x0;
                 lb = prob_data.bl,
                 ub = prob_data.bu,
                 max_iter = max_iter,
                 gtol = 1e-8,
+                ftol = 1e-8,
             )
-            #run one more time for timing:
-
-            t = minimum(
-                @be solver_func(
-                    prob_data.residual_func,
-                    prob_data.jacobian_func,
-                    prob_data.x0;
-                    lb = prob_data.bl,
-                    ub = prob_data.bu,
-                    max_iter = max_iter,
-                    gtol = 1e-8,
-                )
-            ).time
-
-            x_opt, r_opt, g_opt, iterations = result
+            x_opt, r_opt, g_opt, iterations = solve_once()
+            t = minimum(@be solve_once()).time
             final_cost = 0.5 * dot(r_opt, r_opt)
-            converged = norm(g_opt, 2) < 1e-8
+            converged =
+                TRLS.projected_gradient_norm(g_opt, x_opt, prob_data.bl, prob_data.bu) <
+                1e-8
         elseif solver_name in ["PRIMA-NEWUOA", "PRIMA-BOBYQA"]
             # Use objective-only interface
             if solver_name == "PRIMA-NEWUOA"
@@ -184,7 +134,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
             )
             lb = prob_data.bl
             ub = prob_data.bu
-            if any(lb .> -1e-30) || any(ub .< 1e30)
+            if any(isfinite, lb) || any(isfinite, ub)
                 prob_nl = NonlinearLeastSquaresProblem(
                     nl_func,
                     copy(prob_data.x0);
@@ -340,6 +290,7 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                     copy(prob_data.x0),
                     jac = prob_data.jacobian_func,
                     bounds = (prob_data.bl, prob_data.bu),
+                    tr_solver = "lsmr",
                     xtol = nothing,
                     gtol = 1e-8,
                     max_nfev = 1000,
@@ -390,9 +341,25 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
         elseif solver_name in ["Optim-BFGS", "Optim-L-BFGS"]
             # Quasi-Newton baselines on the scalar objective 0.5‖r‖² (Optim.jl).
             # Out-of-place obj/grad closures, hence inplace = false.
+            #
+            # `time_limit` is the one wall-clock cap in this suite, and it applies only to these
+            # two reference baselines. Their line search evaluates the gradient many times per
+            # iteration, which the `iterations` budget does not bound, so under the delay
+            # benchmark's 200 ms gradient a single cell can run for tens of minutes: these two
+            # solvers were half of that benchmark's entire runtime, and its slowest cell was
+            # Optim-L-BFGS on mgh03 at 987 s. Optim checks the limit between iterations, so the
+            # effective bound is the cap plus one iteration. A capped run still returns its best
+            # iterate with `converged = false` and is scored on the cost it reached, like any
+            # other non-convergent run. See benchmark/AUDIT.md — the 30 s caps removed for
+            # fairness were package defaults that differed per solver and bit at a scale where
+            # they changed outcomes; this one is explicit and three orders of magnitude looser.
             method = solver_name == "Optim-BFGS" ? Optim.BFGS() : Optim.LBFGS()
-            optim_opts = Optim.Options(iterations = max_iter, g_tol = 1e-8)
-            res = Optim.optimize(
+            optim_opts = Optim.Options(
+                iterations = max_iter,
+                g_tol = 1e-8,
+                time_limit = OPTIM_TIME_LIMIT[],
+            )
+            solve_optim() = Optim.optimize(
                 prob_data.obj_func,
                 prob_data.grad_func,
                 copy(prob_data.x0),
@@ -400,16 +367,12 @@ function test_solver_on_problem(solver_name, solver_func, prob_data, prob, max_i
                 optim_opts;
                 inplace = false,
             )
-            t = minimum(
-                @be Optim.optimize(
-                    prob_data.obj_func,
-                    prob_data.grad_func,
-                    copy(prob_data.x0),
-                    method,
-                    optim_opts;
-                    inplace = false,
-                )
-            ).time
+            # Timed on the single solve rather than through `@be`, which would run it again. With
+            # a solve this slow Chairmarks' 0.1 s budget yields exactly one sample anyway, so
+            # `minimum(@be ...)` is the time of one call — bought at the price of a second one.
+            timed = @timed solve_optim()
+            res = timed.value
+            t = timed.time
             x_opt = Optim.minimizer(res)
             final_cost = prob_data.obj_func(x_opt)
             g_opt = prob_data.grad_func(x_opt)

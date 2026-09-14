@@ -26,4 +26,10 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Tidier = "f0413319-3358-4bb0-8e7c-0c83523a93bd"
-nonlinearlstr = "21ca2098-f897-4540-9ab3-b13ed390dd37"
+TrustRegionLeastSquares = "21ca2098-f897-4540-9ab3-b13ed390dd37"
+
+# Not part of the root workspace: this stack (CUTEst, PythonCall, CairoMakie) would otherwise share
+# one resolve with the tests. It keeps its own Manifest.toml, pinned and tracked, because the
+# figures in the README are cited results.
+[sources]
+TrustRegionLeastSquares = {path = ".."}

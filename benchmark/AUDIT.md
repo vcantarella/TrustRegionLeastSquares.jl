@@ -32,18 +32,52 @@ not against documentation.
 | 3 | Hidden 30 s wall-clock caps: TRON `max_time = 30.0`, NLLSsolver `maxtime = 30.0` — no other solver had one. TRON also stopped at `atol + rtol·‖g₀‖` with `atol = rtol = √eps` (per-problem-varying). | TRON: `atol = 1e-8, rtol = 0, max_time = Inf`. NLLSsolver: `maxtime = 1e6` (stored as `UInt64` ns; `Inf` throws). TRON success rose 88.6% → 93.2%. |
 | 4 | `lm_trust_region!` printed to stdout every iteration **inside the timed region**. | `verbose::Bool = false` kwarg guards all prints (`src/algorithms.jl`). |
 | 5 | Tolerances were mixed per class (gradient 1e-6, others 1e-8). | **Uniform 1e-8 on every exposed tolerance** (decision below). |
-| 6 | Single-step `x_tol` criteria fire on slow crawl without optimality evidence; "This work" has no such test. | Disabled where single-step: SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`. Kept where structural: NonlinearSolve stall (32 *consecutive* steps; only exit at nonzero residual), PRIMA `rhoend` (DFO resolution parameter). |
+| 6 | Single-step `x_tol` criteria fire on slow crawl without optimality evidence; "TRLS" has no such test. | Disabled where single-step: SciPy `xtol = None`, LSO/LsqFit `x_tol = 0`. Kept where structural: NonlinearSolve stall (32 *consecutive* steps; only exit at nonzero residual), PRIMA `rhoend` (DFO resolution parameter). |
 
-### Deferred (bounded script only — fix before `compare_bounded.jl` ships)
+### Resolved with the bounded solver (2026-09-11)
 
-- `dispatch.jl` Scipy-LSMR: the `@be` timing call omits `tr_solver = "lsmr"` — it times
-  the default TRF configuration against LSMR's solution.
+- `dispatch.jl` Scipy-LSMR: the `@be` timing call omitted `tr_solver = "lsmr"`, timing the
+  default TRF configuration against LSMR's solution. Added.
 - `dispatch.jl` NonlinearSolve bounds heuristic `any(lb .> -1e-30) || any(ub .< 1e30)`
-  silently drops bounds for e.g. `lb = -5, ub = Inf`; should test `isfinite`. Compounded
-  by `is_success` not checking `bounds_satisfied`, an unconstrained interloper can set an
-  unreachable `min_solution` for the whole problem.
-- `run.jl` stores `nvars = prob_data.n` (residual count) and `nresiduals = prob_data.m`
-  (variable count) — swapped in the CSVs (not plotted anywhere).
+  silently dropped bounds for e.g. `lb = -5, ub = Inf`; now `any(isfinite, lb) || any(isfinite, ub)`.
+  The compounding issue — an unconstrained interloper setting an unreachable `min_solution` for the
+  whole problem — is closed in `evaluate.jl`: `compare_with_best` now maps the cost of any solve
+  that violates its bounds to `Inf` before taking the per-problem minimum.
+- `dispatch.jl` strategy dispatch tested `contains(solver_name, "LQ")` before `"LQChol"`, so every
+  `LM-LQChol` row was in fact produced by `LQStrategy`. The chain now tests `LQChol` first, which
+  means LQChol columns in results produced before this date are mislabelled LQ columns.
+- `run.jl` stored `nvars`/`nresiduals` swapped. Correct in `run.jl`; `hard_luksan.jl` carried the
+  same swap and is fixed too.
+
+### The one wall-clock cap, and why it is not finding #3 again (2026-09-12)
+
+Finding #3 removed hidden 30 s caps from TRON and NLLSsolver. The delay benchmark now sets one
+deliberately: `time_limit = 900` (15 minutes) for Optim-BFGS and Optim-L-BFGS. The two are not the
+same kind of thing.
+
+What made the 30 s caps unfair was that they were package defaults, differed between solvers, were
+invisible in the configuration, and bit at a scale that changed outcomes — lifting them moved TRON
+from 88.6% to 93.2%. This cap is stated in the configuration table, applies to the two rows already
+labelled reference baselines rather than like-for-like competitors, and sits three orders of
+magnitude above the scale where these solvers finish: the slowest Optim cell ever recorded in this
+suite is Optim-L-BFGS on mgh03 at 987 s, and re-running tp241 with the cap in place reproduces
+August's uncapped numbers to within rounding (11.75 s / 31 iterations against 11.777 s / 30).
+
+It exists because the `iterations` budget does not bound gradient evaluations: the line search calls
+the gradient many times per iteration, and under a 200 ms gradient those two solvers were **49.6% of
+the whole benchmark's runtime** (83.9 of 169.3 minutes of solve time). Optim checks the limit between
+iterations, so the effective bound is 15 minutes plus one iteration. A capped run returns its best
+iterate with `converged = false` and is scored on the cost it reached, exactly like any other
+non-convergent run.
+
+Two related changes at the same time:
+
+- The Optim branch is timed on its single solve instead of through `@be`. Every cell in the delay
+  benchmark takes seconds, so Chairmarks' 0.1 s budget yields exactly one sample and
+  `minimum(@be f)` was already just the time of one call — at the cost of running the solve a second
+  time. Removing that halves the most expensive half of the benchmark.
+- Every benchmark loop now flushes stdout. Julia block-buffers stdout to a file, so a run that is
+  merely slow had been indistinguishable from one that had hung; diagnosing that cost a 7-hour run.
 
 ## The termination-criteria decision
 
@@ -63,8 +97,8 @@ sources:
 - Consequently `NormTerminationMode` ("both tolerances") is residual-only in both
   branches and has **no stall exit** — it would strand the 30 nonzero-residual problems
   at `maxiters`. SafeBest + `abstol = 1e-8` is the correct NLLS configuration.
-- **Empirically confirmed** by `benchmark/scripts/mwe_nonlinearsolve_stall.jl`
-  (self-contained; deps NLSProblems + NLPModels + NonlinearSolve): 62 LM/TR solves on
+- **Empirically confirmed** by a since-removed scratch script (self-contained; deps
+  NLSProblems + NLPModels + NonlinearSolve): 62 LM/TR solves on
   31 nonzero-residual problems → **0× `Success`**, 45× `StalledSuccess`, 17× `MaxIters`,
   with 48/62 at stationary points (`‖J'F‖ < 1e-4`); zero-residual problems get
   `Success` 105/114 times. Fully converged runs (e.g. mgh23-LM, `‖J'F‖ = 5.8e-8`)
@@ -81,23 +115,155 @@ sources:
 
 | Solver | Explicit settings | Native criteria left active (defaults) |
 |---|---|---|
-| This work (`lm_trust_region!`) | `gtol = 1e-8, ftol = 1e-8, verbose = false` | radius collapse `< 1e-8` |
+| TRLS (`lm_trust_region!`) | `gtol = 1e-8, ftol = 1e-8, verbose = false` | radius collapse `< 1e-8` |
 | NonlinearSolve TR/LM | `abstol = 1e-8, maxiters = 400` | SafeBest stall exit (32 steps ≤ abstol) |
 | JSO-TRON | `atol = 1e-8, rtol = 0, max_time = Inf` | — |
 | LSO-Levenberg-QR | `iterations = 400, g_tol = 1e-8, x_tol = 0` | `f_tol = 1e-8` default |
 | SciPy `least_squares` (TRF) | `gtol = 1e-8, xtol = None, max_nfev = 1000` | `ftol = 1e-8` default |
 | NLLSsolver-LM | `reldcost = 1e-8, maxiters = 400, maxtime = 1e6` | `absdcost/dstep = 1e-15` (off) |
-| Optim BFGS/L-BFGS | `g_tol = 1e-8, iterations = 400` | x/f tolerances off (Optim default) |
+| Optim BFGS/L-BFGS | `g_tol = 1e-8, iterations = 400`; `time_limit = 900` in the delay benchmark only | x/f tolerances off (Optim default) |
 | LsqFit-LM | `g_tol = 1e-8, x_tol = 0, maxIter = 400` | — |
 | PRIMA-NEWUOA | `rhoend = 1e-8, maxfun = 400·n_vars` | — (derivative-free reference) |
 
 ## Results — uniform-1e-8 configuration
 
-Main figure (fresh, 2026-08-08):
+### 2026-09-11 re-run
+
+Every figure and number below was re-measured on 2026-09-11 against the finished solver. The table
+from the 2026-08-08 run is kept underneath for comparison, but it describes code with four defects
+that have since been fixed, so treat it as historical rather than as a baseline:
+
+- The `QRStrategy` λ-update had the wrong sign, so the step overshot the trust-region boundary (9%
+  past it on the case that exposed it, with a normal-equation residual of 0.25). `QRStrategy` is the
+  variant the `TRLS` row runs, so this affected the headline figures directly.
+- `ftol` compared the cost reduction against `max(cost, 1)`, making it an absolute floor once the
+  cost fell below 1. On Powell badly scaled the solver stopped at a gradient of 1.18; it is now a
+  relative test and reaches 1.2e-6.
+- The radius update now follows MINPACK `lmder`, scaling off the step actually taken.
+- The λ-iteration cap went from 6 to 10, which is what an ill-conditioned Jacobian needs to place
+  the boundary.
+
+Also: labels changed from "This work" to `TRLS`, and `LM-LQChol` rows produced before this date were
+actually produced by `LQStrategy` (the dispatch chain tested `"LQ"` first), so pre-2026-09-11 LQChol
+columns in any CSV are mislabelled LQ columns.
+
+Main figure (88 unconstrained NLSProblems, Julia 1.12, macOS aarch64):
 
 | Solver | Success % | Median iters (succ) | Total time (succ) |
 |---|---|---|---|
-| This work | **100.0** | 12.5 | 0.495 s |
+| TRLS | **100.0** | 12.5 | 0.283 s |
+| Scipy-LeastSquares | **100.0** | 13.0 | 1.335 s |
+| NLLSsolver-LM | 97.7 | 13.5 | 0.034 s |
+| NonlinearSolve-TR | 94.3 | 33.0 | 0.110 s |
+| NonlinearSolve-LM | 94.3 | 39.0 | 0.171 s |
+| JSO-TRON | 93.2 | 16.0 | 0.117 s |
+| NonlinearSolve-GNBK | 90.9 | 16.0 | 0.312 s |
+| Optim-L-BFGS | 90.9 | 33.0 | 0.219 s |
+| Optim-BFGS | 89.8 | 32.0 | 0.133 s |
+| NonlinearSolve-GNLF | 87.5 | 15.0 | 0.189 s |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 0.127 s |
+| LsqFit-LM | 84.1 | n/a (not exposed) | 1.470 s |
+
+Against the 2026-08-08 run: success rates and median iterations are unchanged (100.0 / 12.5), and
+cumulative solve time fell from 0.495 s to 0.283 s, so the margin over SciPy went from 2.7x to 4.7x.
+The factorization-buffer reuse in the λ-iteration is the likely cause; competitors moved by less than
+a percentage point, as expected for untouched code.
+
+Bounded figure (71 bound-constrained problems, first run of the finished bounded solver):
+
+| Solver | Success % | Median iters (succ) | Total time (succ) |
+|---|---|---|---|
+| TRLS | **84.5** | 18.0 | 0.081 s |
+| LM-QR-scaled | 83.1 | 16.0 | 0.067 s |
+| LM-QRChol | 83.1 | 18.0 | 0.048 s |
+| Scipy-LeastSquares | 81.7 | 18.0 | 0.853 s |
+| Scipy-LSMR | 69.0 | 17.0 | 3.267 s |
+| LsqFit-LM | 64.8 | n/a | 0.318 s |
+| LSO-Levenberg-QR | 63.4 | 35.0 | 0.041 s |
+| PRIMA-BOBYQA | 62.0 | 204 (nf) | 2.770 s |
+| JSO-TRON | 29.6 | 21.0 | 0.477 s |
+| NonlinearSolve-PolyAlg | 16.9 | 1449.5 | 0.743 s |
+| NonlinearSolve-TrustRegion | 8.5 | 33.5 | 0.0004 s |
+| NonlinearSolve-GaussNewton | 7.0 | 450.0 | 0.006 s |
+| NonlinearSolve-LevenbergMarquardt | 1.4 | 450.0 | 0.002 s |
+
+Two caveats, both recorded in the README caption:
+
+- **No solver violated its bounds** on any of the 71 problems, so the `bounds_satisfied` scoring fix
+  added on 2026-09-11 changed no result here. It remains the right scoring rule; it simply did not bind.
+- **JSO-TRON's rate is harness-limited, not algorithmic.** It consumes the NLPModel directly and
+  refuses any model with general constraints, declining 47 of 71 with *"tron should only be called for
+  unconstrained or bound-constrained problems"* — the CUTEst problems encode residuals as constraints.
+  **New deferred item:** build a genuinely bound-constrained NLS model from the CUTEst encoding so TRON
+  is measured on the algorithm. Until then do not quote TRON's bounded rate as a capability.
+- NonlinearSolve's low rates are non-convergence within the 450-iteration budget, not errors: zero
+  failed runs, medians at or near the cap.
+
+Underdetermined figure (88 problems, residual rows cropped). **Finding #7, new on 2026-09-11:** this
+suite scored success at `atol = 1e-12` on the cost while `dispatch.jl` configures every exposed
+tolerance to `1e-8`. A threshold four orders of magnitude tighter than the configured stopping
+tolerance measures the threshold, not the solver — and it penalised several solvers for stopping
+exactly where told. `COST_ATOL` is now `1e-8`; both scorings are below so nothing is hidden.
+
+| Solver | Success @ 1e-12 (old) | Success @ 1e-8 (now) | Median iters | Total time | Median ‖x*-x0‖ |
+|---|---|---|---|---|---|
+| TRLS | 59.1 | **100.0** | 4.0 | 0.052 s | 2.193 |
+| LM-QR-scaled | 56.8 | **100.0** | 4.0 | 0.022 s | 2.200 |
+| NonlinearSolve-TR | 98.9 | **100.0** | 6.0 | 0.032 s | 2.190 |
+| Scipy-LeastSquares | 90.9 | **100.0** | 16.0 | 0.833 s | 2.200 |
+| NonlinearSolve-GNBK | 97.7 | 98.9 | 5.0 | 0.048 s | 2.200 |
+| Optim-BFGS | 86.4 | 98.9 | 13.0 | 0.076 s | 2.200 |
+| Optim-L-BFGS | 89.8 | 97.7 | 15.5 | 0.032 s | 2.200 |
+| NonlinearSolve-GNLF | 96.6 | 96.6 | 5.0 | 0.021 s | 2.200 |
+| NLLSsolver-LM | 96.6 | 96.6 | 6.0 | 0.019 s | 2.190 |
+| NonlinearSolve-LM | 95.5 | 95.5 | 9.0 | 0.022 s | 2.035 |
+| LSO-Levenberg-QR | 86.4 | 86.4 | 6.5 | 0.038 s | 2.200 |
+| LsqFit-LM | 81.8 | 83.0 | n/a | 0.027 s | 2.200 |
+
+The solvers that moved are exactly the ones with a cost-based stopping test; those that stop on the
+residual norm or the gradient (NLLSsolver, NonlinearSolve-GNLF, LSO) are unchanged, which is the
+signature of a threshold artifact rather than a capability difference. Cross-check: at `1e-4`, the
+tolerance the overdetermined suite uses, the ranking is identical to `1e-8`.
+
+Note that `TRLS` and `LM-QR-scaled` here are QR strategies, not the LQ family that actually computes
+minimum-norm steps; `internal_variants.jl` scores those, where `LM-LQ` leads on min-norm rate at 0.97
+against 0.80 for the scaled variants.
+
+Delay figure (88 problems, 200 ms per Jacobian and gradient evaluation; 4 h 59 m of wall clock):
+
+| Solver | Success % | Median iters | Total time | vs SciPy |
+|---|---|---|---|---|
+| TRLS | **100.0** | 12.5 | 425.8 s | **1.16x** |
+| Scipy-LeastSquares | **100.0** | 13.0 | 495.7 s | 1.00x |
+| NLLSsolver-LM | 97.7 | 13.5 | 444.3 s | 1.12x |
+| NonlinearSolve-TR | 94.3 | 33.0 | 566.0 s | 0.88x |
+| NonlinearSolve-LM | 94.3 | 39.0 | 780.2 s | 0.64x |
+| Optim-L-BFGS | 90.9 | 33.0 | 2567.6 s | 0.19x |
+| Optim-BFGS | 89.8 | 32.0 | 2330.1 s | 0.21x |
+| LSO-Levenberg-QR | 87.5 | 13.0 | 419.5 s | 1.18x (own set) |
+| LsqFit-LM | 84.1 | n/a | 518.2 s | 0.96x (own set) |
+
+The 2026-08-08 headline was TRLS tying SciPy at 1.0x; it now leads at 1.16x, with the same 100% and
+the same 12.5 median iterations. Every competitor's success rate is unchanged to the tenth of a
+percent, so the movement is this package's, not the suite's.
+
+**Cap audit.** The 15-minute cap bound on 2 cells out of 792, both `tp297`: Optim-BFGS at 910.8 s
+(273 iterations) and Optim-L-BFGS at 903.5 s (267), each stopped at a cost of about -1e-14, which is
+machine zero for this problem. Both still score as successes since that matches the best cost found,
+and the Optim success rates are **identical to the uncapped August run** (89.8% and 90.9%). The cap
+therefore changed two `converged` flags and two recorded times, and no outcome.
+
+**Upstream slowdown worth recording.** `tp297` / Optim-L-BFGS took 55.7 s in August under Optim 2.2.1
+and exceeded 900 s here under 2.3.1, at 267 iterations against 189; the BFGS cell went from 577 s to
+over 900 s. Nothing in this package touches that path. It is also the reason the cap earns its place
+now when August would not have needed it, and the likely reason the first attempt at this re-run was
+slower than the August one.
+
+### Historical: 2026-08-08 run
+
+| Solver | Success % | Median iters (succ) | Total time (succ) |
+|---|---|---|---|
+| TRLS | **100.0** | 12.5 | 0.495 s |
 | Scipy-LeastSquares | **100.0** | 13.0 | 1.329 s |
 | NLLSsolver-LM | 97.7 | 13.5 | 0.035 s |
 | NonlinearSolve-LM | 94.3 | 39.0 | 0.256 s |
@@ -109,11 +275,11 @@ Main figure (fresh, 2026-08-08):
 | LSO-Levenberg-QR | 87.5 | 13.0 | 0.120 s |
 | LsqFit-LM | 84.1 | n/a (not exposed) | 0.071 s |
 
-Headline: **This work 100% at 2.7× SciPy**; enabling `ftol = 1e-8` cut its median
+Headline: **TRLS 100% at 2.7× SciPy**; enabling `ftol = 1e-8` cut its median
 iterations 14.5 → 12.5. Every fairness fix moved a *competitor* up (TRON +4.6 pts,
 NonlinearSolve-LM median 72 → 39, PRIMA +1.1, LsqFit +2.3) and the headline survived —
 cite this when questioned. Delay-figure rerun at these settings in progress; expect the
-few-iteration LM cluster (This work / SciPy / NLLSsolver ≈ 1×) ahead of
+few-iteration LM cluster (TRLS / SciPy / NLLSsolver ≈ 1×) ahead of
 NonlinearSolve-LM (stall tail) and BFGS/L-BFGS (line-search gradient evaluations).
 
 ## Reproduce

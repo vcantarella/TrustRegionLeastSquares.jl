@@ -6,6 +6,7 @@ function nlls_benchmark(problems, solvers; max_iter = 100, transform = identity)
     for (i, prob_name) in enumerate(problems)
         println("\n" * "="^60)
         println("Problem $i/$max_problems: $prob_name")
+        flush(stdout)   # stdout is block-buffered to a file: without this, slow looks like hung
         # Create problem instance
         local nlp
         local prob_data
@@ -30,6 +31,7 @@ function nlls_benchmark(problems, solvers; max_iter = 100, transform = identity)
         problem_results = []
         for (solver_name, solver_func) in solvers
             print("    Testing $solver_name... ")
+            flush(stdout)
             result =
                 test_solver_on_problem(solver_name, solver_func, prob_data, nlp, max_iter)
             if result.success && result.converged
@@ -40,6 +42,7 @@ function nlls_benchmark(problems, solvers; max_iter = 100, transform = identity)
                 status = result.success ? "no convergence" : "failed"
                 println("✗ $status")
             end
+            flush(stdout)
             result_with_problem = merge(
                 result,
                 (

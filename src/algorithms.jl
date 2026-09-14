@@ -1,217 +1,151 @@
 """
-    lm_trust_region(
-        res::Function,
-        jac::Function,
-        x0::Array{T},
-        subproblem_strategy::SubProblemStrategy = SVDSolve(),
-        scaling_strategy::ScalingStrategy = NoScaling();
-        initial_radius::Real = 1.0,
-        max_trust_radius::Real = 1e12,
-        min_trust_radius::Real = 1e-8,
-        step_threshold::Real = 0.001,
-        shrink_threshold::Real = 0.25,
-        expand_threshold::Real = 0.75,
-        shrink_factor::Real = 0.25,
-        expand_factor::Real = 2.0,
-        max_iter::Int = 100,
-        gtol::Real = 1e-6,
-        ftol::Real = 1e-15,
-        norm_overrides_initial_radius::Bool = true,
-    ) where {T}
+    projected_gradient_norm(g, x, lb, ub)
 
-Solves a nonlinear least squares problem using a Levenberg-Marquardt style trust-region algorithm.
-Minimizes `0.5 * ||f(x)||^2`.
-
-# Arguments
-- `res::Function`: The residual function `f(x)` returning a vector.
-- `jac::Function`: The Jacobian function `J(x)` returning the Jacobian matrix.
-- `x0::Array{T}`: Initial guess for the solution.
-- `subproblem_strategy`: Strategy for solving the subproblem (default: `SVDSolve()`).
-                         Options: `SVDSolve()`, `QRSolve()`, `QRrecursiveSolve()`.
-- `scaling_strategy`: Strategy for scaling variables (default: `NoScaling()`).
-
-# Keywords
-- `initial_radius`: Initial trust region radius (default: 1.0).
-- `max_trust_radius`: Maximum allowed radius.
-- `min_trust_radius`: Minimum radius before termination.
-- `step_threshold`: Minimum relative improvement to accept a step.
-- `max_iter`: Maximum number of iterations.
-- `gtol`: Gradient tolerance for convergence (`norm(g) < gtol`).
-- `ftol`: Function tolerance for convergence.
-- `norm_overrides_initial_radius`: If true, `initial_radius` is scaled by the norm of the first step.
-
-# Returns
-- `x`: Optimized parameters.
-- `f`: Final residuals.
-- `g`: Final gradient.
-- `iter`: Number of iterations performed.
+`‖x − P(x − g)‖`, the first-order optimality measure for `lb ≤ x ≤ ub`; equals `‖g‖` exactly
+when the bounds are infinite. Written component-wise as a `max`/`min` rather than
+`x − clamp(x − g, lb, ub)`, which loses `g` to rounding when `|x| ≫ |g|`.
 """
-function lm_trust_region(
-    res::Function,
-    jac::Function,
-    x0::Array{T},
-    subproblem_strategy::SubProblemStrategy = SVDSolve(),
-    scaling_strategy::ScalingStrategy = NoScaling();
-    initial_radius::Real = 1.0,
-    max_trust_radius::Real = 1e12,
-    min_trust_radius::Real = 1e-8,
-    step_threshold::Real = 0.001,
-    shrink_threshold::Real = 0.25,
-    expand_threshold::Real = 0.75,
-    shrink_factor::Real = 0.25,
-    expand_factor::Real = 2.0,
-    max_iter::Int = 100,
-    gtol::Real = 1e-6,
-    ftol::Real = 1e-15,
-    norm_overrides_initial_radius::Bool = true,
-) where {T}
+projected_gradient_norm(g, x, lb, ub) = sqrt(
+    sum(
+        abs2(g[i] < 0 ? max(g[i], x[i] - ub[i]) : min(g[i], x[i] - lb[i])) for
+        i in eachindex(x)
+    ),
+)
 
-    # Initialize
-    x = copy(x0)
-    x_trial = copy(x0) # Buffer for candidate step
-    f = res(x)
-    J = jac(x)
-    Jδ = Vector{T}(undef, length(f))
-    cost = 0.5 * dot(f, f)
-    g = J' * f
-    λ_old = zero(T)
-    cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
-    if norm_overrides_initial_radius && norm(x0) > 1e-4
-        initial_radius = norm(cache.scaling_matrix * x0)
-    end
-    radius = initial_radius
-    # Check initial convergence
-    if norm(g) < gtol
-        println("Initial guess satisfies gradient tolerance")
-        return x, f, g, 0
-    end
-    #iterations
-    for iter = 1:max_iter
-        # Compute step using QR-facorization
-        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache, λ_old)
-        λ_old = λ
-        # Evaluate new point
-        @. x_trial = x + δ
-        f_new = res(x_trial)
-        cost_new = 0.5 * dot(f_new, f_new)
-        # Compute reduction ratio
-        actual_reduction = cost - cost_new
-        # Predicted reduction using QR factorization
-        mul!(Jδ, J, δ)
-        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
-        predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
-        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
-            println("Non-positive predicted reduction, shrinking radius")
-            radius *= shrink_factor
-            continue
-        end
-        # the reduction ratio
-        ρ = actual_reduction / predicted_reduction
-        # Update trust region radius
-        if (ρ >= expand_threshold) && (λ > 0)
-            radius = min(max_trust_radius, expand_factor * radius)
-        elseif ρ < shrink_threshold
-            radius *= shrink_factor
-        end
-        # Accept or reject step
-        if ρ >= step_threshold
-            @. x = x_trial
-            @. f = f_new
-            cost = cost_new
-            J = jac(x)
-            mul!(g, J', f)
-            println(
-                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
-            )
-            # Check convergence
-            if norm(g, 2) < gtol
-                println("Gradient convergence criterion reached")
-                return x, f, g, iter
-            end
-            if actual_reduction < ftol * max(cost, 1.0)
-                println("Function tolerance criterion reached")
-                return x, f, g, iter
-            end
-            # update cache
-            factorize!(cache, subproblem_strategy, J)
-            cache.scaling_matrix .= scaling(scaling_strategy, J)
-            # To verify allocations reduced, check cache.J_buffer
-            if cache.J_buffer === nothing
-                @warn "Optimized path NOT taken: J is $(typeof(J))"
-            end
-        else
-            println("Step rejected, ρ = $ρ")
-        end
-        # Check trust region size
-        if radius < min_trust_radius
-            println("Trust region radius below minimum")
-            return x, f, g, iter
-        end
-    end
-    println("Maximum number of iterations reached")
-    return x, f, g, max_iter
+"""
+    trust_region_step!(cache::SolverCache, J, f, g, Δ, λ_old, x, lb, ub) -> (λ, predicted_reduction, ‖Dp‖)
+
+Unconstrained trust-region step into `cache.p`. The predicted reduction is `½‖Jp‖² + λ‖Dp‖²`,
+the MINPACK form of [Mor78]: it equals `-gᵀp − ½‖Jp‖²` at a solution of `(JᵀJ + λD²) p = -Jᵀf`
+([NW06] Theorem 4.1) but is free of that expression's cancellation for ill-conditioned `J`. The scaled step length `‖Dp‖`
+drives the radius update.
+"""
+function trust_region_step!(cache::SolverCache, J, f, g, Δ, λ_old, x, lb, ub)
+    λ = solve_subproblem(J, f, Δ, cache, λ_old)
+    Jp = mul!(cache.Jp, J, cache.p)
+    Dp = cache.scaling_matrix * cache.p
+    return λ, dot(Jp, Jp) / 2 + λ * dot(Dp, Dp), norm(Dp)
 end
 
 """
-    lm_trust_region(
-        res::Function,
-        jac::Function,
-        x0::Array{T},
-        subproblem_strategy::SubProblemStrategy = SVDSolve(),
-        scaling_strategy::ScalingStrategy = NoScaling();
-        initial_radius::Real = 1.0,
-        max_trust_radius::Real = 1e12,
-        min_trust_radius::Real = 1e-8,
-        step_threshold::Real = 0.001,
-        shrink_threshold::Real = 0.25,
-        expand_threshold::Real = 0.75,
-        shrink_factor::Real = 0.25,
-        expand_factor::Real = 2.0,
-        max_iter::Int = 100,
-        gtol::Real = 1e-6,
-        ftol::Real = 1e-15,
-        norm_overrides_initial_radius::Bool = true,
-    ) where {T}
+    lm_trust_region!(res!, jac!, x0, output_length,
+                     strategy = QRCholStrategy(), scaling = NoScaling();
+                     lb = -Inf, ub = Inf, kwargs...) -> (x, f, g, iter)
 
-Solves a nonlinear least squares problem using a Levenberg-Marquardt style trust-region algorithm.
-Minimizes `0.5 * ||f(x)||^2`.
+Minimize `½‖f(x)‖²` subject to `lb ≤ x ≤ ub` with a Levenberg–Marquardt trust-region method
+([NW06] Algorithm 4.1 and §10.3; see the module docstring for the reference keys).
 
-# Arguments
-- `res::Function`: The residual function `f(x)` returning a vector.
-- `jac::Function`: The Jacobian function `J(x)` returning the Jacobian matrix.
-- `x0::Array{T}`: Initial guess for the solution.
-- `subproblem_strategy`: Strategy for solving the subproblem (default: `SVDSolve()`).
-                         Options: `SVDSolve()`, `QRSolve()`, `QRrecursiveSolve()`.
-- `scaling_strategy`: Strategy for scaling variables (default: `NoScaling()`).
+`res!(f, x)` writes the `output_length` residuals into `f`; `jac!(J, x)` writes the Jacobian into
+the `output_length × length(x)` matrix `J`. Each iteration solves
+`min ‖J p + f‖  s.t.  ‖D p‖ ≤ Δ` (see [`solve_subproblem`](@ref)); `strategy` picks the
+factorization ([`QRCholStrategy`](@ref), [`QRStrategy`](@ref), [`LQStrategy`](@ref),
+[`LQCholStrategy`](@ref)) and `scaling` the matrix `D` ([`NoScaling`](@ref),
+[`JacobianScaling`](@ref)).
+
+With finite bounds the step is projected onto the box and safeguarded by a generalized Cauchy
+step ([MMP09], see [`trust_region_step!`](@ref)); `x0` is clamped into
+the box, every iterate stays feasible and may sit on a bound, and convergence is measured by
+the projected gradient `‖x − P(x − g)‖`.
 
 # Keywords
-- `initial_radius`: Initial trust region radius (default: 1.0).
-- `max_trust_radius`: Maximum allowed radius.
-- `min_trust_radius`: Minimum radius before termination.
-- `step_threshold`: Minimum relative improvement to accept a step.
-- `max_iter`: Maximum number of iterations.
-- `gtol`: Gradient tolerance for convergence (`norm(g) < gtol`).
-- `ftol`: Function tolerance for convergence.
-- `norm_overrides_initial_radius`: If true, `initial_radius` is scaled by the norm of the first step.
-- `verbose`: Print per-iteration progress (default `false`; keep off when timing).
-- `callback`: Optional function invoked once per iteration with a NamedTuple
-  `(iter, x, x_trial, δ, λ, radius, ρ, accepted, cost)` for tracing/animation
-  (default `nothing`; `ρ = NaN` when the predicted reduction was non-positive).
+- `lb`, `ub`: bounds, vectors of `length(x0)`; default `±Inf` (unconstrained).
+- `initial_radius = 1.0`: trust-region radius Δ₀; replaced by `‖D x0‖` when
+  `norm_overrides_initial_radius = true` (default) and `‖x0‖ > 1e-4`.
+- `max_trust_radius = 1e12`, `min_trust_radius = 1e-8`: Δ bounds; the solver stops when Δ shrinks below the minimum.
+- `step_threshold = 0.001`: accept the step when the ratio ρ of actual to predicted reduction exceeds this.
+- `shrink_threshold = 0.25`, `shrink_factor = 0.25`: when ρ < shrink_threshold,
+  Δ ← shrink_factor·min(Δ, 10‖Dp‖) — the radius follows the step that was tried, as in [Mor78]
+  (MINPACK `lmder`), rather than the previous radius.
+- `expand_threshold = 0.75`, `expand_factor = 2.0`: when ρ ≥ expand_threshold or the step was
+  a full Gauss–Newton step (λ = 0), Δ ← expand_factor·‖Dp‖ — twice the step just taken, which
+  equals expand_factor·Δ for a step on the boundary.
+- `max_iter = 100`.
+- `gtol = 1e-6`: stop when `‖x − P(x − g)‖ < gtol` (`‖g‖` unconstrained), with `g = Jᵀf`.
+- `ftol = 1e-15`: stop when the cost reduction becomes relatively small, `actual < ftol·cost`, or
+  the cost itself drops below `ftol` (a zero-residual solution).
+- `verbose = false`: print one line per accepted step.
 
 # Returns
-- `x`: Optimized parameters.
-- `f`: Final residuals.
-- `g`: Final gradient.
-- `iter`: Number of iterations performed.
+`x` (solution), `f` (residuals at `x`), `g = Jᵀf`, and the iteration count.
+
+# Example
+```julia
+rosen!(f, x) = (f[1] = 10(x[2] - x[1]^2); f[2] = 1 - x[1]; f)
+rosen_jac!(J, x) = (J[1, 1] = -20x[1]; J[1, 2] = 10; J[2, 1] = -1; J[2, 2] = 0; J)
+x, f, g, iter = lm_trust_region!(rosen!, rosen_jac!, [-1.2, 1.0], 2)                  # → (1, 1)
+x, f, g, iter = lm_trust_region!(rosen!, rosen_jac!, [-1.2, 1.0], 2; ub = [0.5, 2.0])  # → (0.5, 0.25)
+```
 """
 function lm_trust_region!(
-    res!::Function,
-    jac!::Function,
-    x0::Array{T},
+    res!,
+    jac!,
+    x0::AbstractVector{T},
     output_length::Int,
-    subproblem_strategy::SubProblemStrategy = SVDSolve(),
-    scaling_strategy::ScalingStrategy = NoScaling();
+    strategy::Strategy = QRCholStrategy(),
+    scaling::ScalingStrategy = NoScaling();
+    lb::AbstractVector{<:Real} = fill(T(-Inf), length(x0)::Int),
+    ub::AbstractVector{<:Real} = fill(T(Inf), length(x0)::Int),
     initial_radius::Real = 1.0,
+    norm_overrides_initial_radius::Bool = true,
+    kwargs...,
+) where {T}
+    all(lb .<= ub) || throw(ArgumentError("lb > ub"))
+    # `length` of an abstract AbstractVector is not inferrable as an Int; assert it once, and own
+    # `x` as a plain Vector, so the solve is type-stable whatever container x0 came in as (the
+    # solver mutates x, so it must not alias or inherit the caller's storage).
+    nvars = length(x0)::Int
+    x = Vector{T}(undef, nvars)
+    x .= clamp.(x0, lb, ub)                     # a feasible copy of the starting point
+    f = zeros(T, output_length)
+    J = zeros(T, (output_length, nvars))        # the tuple form fixes the rank of J at two for inference
+    res!(f, x)
+    jac!(J, x)
+    cache = subproblem_cache_init(strategy, scaling, J)
+    if norm_overrides_initial_radius && norm(x) > 1e-4
+        initial_radius = norm(cache.scaling_matrix * x)
+    end
+    if any(isfinite, lb) || any(isfinite, ub)
+        return trust_region_loop!(
+            res!,
+            jac!,
+            x,
+            f,
+            J,
+            BoundedCache(cache),
+            lb,
+            ub,
+            initial_radius,
+            scaling;
+            kwargs...,
+        )
+    else
+        return trust_region_loop!(
+            res!,
+            jac!,
+            x,
+            f,
+            J,
+            cache,
+            lb,
+            ub,
+            initial_radius,
+            scaling;
+            kwargs...,
+        )
+    end
+end
+
+function trust_region_loop!(
+    res!,
+    jac!,
+    x,
+    f,
+    J,
+    cache,
+    lb,
+    ub,
+    radius,
+    scaling;
     max_trust_radius::Real = 1e12,
     min_trust_radius::Real = 1e-8,
     step_threshold::Real = 0.001,
@@ -222,108 +156,46 @@ function lm_trust_region!(
     max_iter::Int = 100,
     gtol::Real = 1e-6,
     ftol::Real = 1e-15,
-    norm_overrides_initial_radius::Bool = true,
     verbose::Bool = false,
-    callback = nothing,
-) where {T}
-
-    # Initialize
-    x = copy(x0)
-    x_trial = copy(x0) # Buffer for candidate step
-    f = zeros(eltype(x0), output_length)
-    f_new = copy(f)
-    J = zeros(eltype(x0), (output_length, length(x0)))
-    res!(f, x)
-    jac!(J, x)
-    Jδ = Vector{T}(undef, length(f))
-    cost = 0.5 * dot(f, f)
+)
+    T = eltype(x)
+    x_trial, f_trial = similar(x), similar(f)
     g = J' * f
-    λ_old = 0.0
-    cache = SubproblemCache(subproblem_strategy, scaling_strategy, J)
-    if norm_overrides_initial_radius && norm(x0) > 1e-4
-        initial_radius = norm(cache.scaling_matrix * x0)
-    end
-    radius = initial_radius
-    # Check initial convergence
-    if norm(g) < gtol
-        verbose && println("Initial guess satisfies gradient tolerance")
-        return x, f, g, 0
-    end
-    #iterations
+    cost = dot(f, f) / 2
+    λ = zero(T)
+    projected_gradient_norm(g, x, lb, ub) < gtol && return x, f, g, 0
     for iter = 1:max_iter
-        # Compute step using QR-facorization
-        λ, δ = solve_subproblem(subproblem_strategy, J, f, radius, cache, λ_old)
-        λ_old = λ
-        radius_used = radius # radius the step was computed with, for the callback
-        # Evaluate new point
-        @. x_trial = x + δ
-        res!(f_new, x_trial)
-        cost_new = 0.5 * dot(f_new, f_new)
-        # Compute reduction ratio
-        actual_reduction = cost - cost_new
-        # Predicted reduction using QR factorization
-        mul!(Jδ, J, δ)
-        #predicted_reduction = -dot(g, δ) - 0.5 * dot(Jδ, Jδ)
-        predicted_reduction = 0.5*dot(Jδ, Jδ)+λ*dot(δ, δ)
-        if predicted_reduction <= 0 #this potentially means the δ is wrong but we leave some margin
-            verbose && println("Non-positive predicted reduction, shrinking radius")
-            callback === nothing || callback((;
-                iter, x = copy(x), x_trial = copy(x_trial), δ = copy(δ),
-                λ, radius = radius_used, ρ = NaN, accepted = false, cost,
-            ))
-            radius *= shrink_factor
-            continue
+        λ, predicted_reduction, step_norm =
+            trust_region_step!(cache, J, f, g, radius, λ, x, lb, ub)
+        x_trial .= clamp.(x .+ cache.p, lb, ub)
+        res!(f_trial, x_trial)
+        cost_trial = dot(f_trial, f_trial) / 2
+        actual_reduction = cost - cost_trial
+        ρ = predicted_reduction > 0 ? actual_reduction / predicted_reduction : -one(T)
+        if ρ < shrink_threshold                           # radius rules of [Mor78], MINPACK lmder
+            radius = shrink_factor * min(radius, 10 * step_norm)
+        elseif ρ >= expand_threshold || iszero(λ)
+            radius = min(max_trust_radius, expand_factor * step_norm)
         end
-        # the reduction ratio
-        ρ = actual_reduction / predicted_reduction
-        # Update trust region radius
-        if (ρ >= expand_threshold) && (λ > 0)
-            radius = min(max_trust_radius, expand_factor * radius)
-        elseif ρ < shrink_threshold
-            radius *= shrink_factor
-        end
-        # Accept or reject step
-        accepted = ρ >= step_threshold
-        # Invoked before x is overwritten so `x` is the step's origin, and before the
-        # convergence returns so the final step is still reported.
-        callback === nothing || callback((;
-            iter, x = copy(x), x_trial = copy(x_trial), δ = copy(δ),
-            λ, radius = radius_used, ρ, accepted, cost,
-        ))
-        if accepted
-            @. x = x_trial
-            @. f = f_new
-            cost = cost_new
+        if ρ >= step_threshold
+            x .= x_trial
+            f .= f_trial
+            cost = cost_trial
             jac!(J, x)
             mul!(g, J', f)
-            verbose && println(
-                "Iteration: $iter, cost: $cost, norm(g): $(norm(g, 2)), radius: $radius",
-            )
-            # Check convergence
-            if norm(g, 2) < gtol
-                verbose && println("Gradient convergence criterion reached")
+            gnorm = projected_gradient_norm(g, x, lb, ub)
+            verbose && println("iter $iter  cost $cost  ‖∇‖ $gnorm  radius $radius")
+            # ftol is a RELATIVE test: the reduction is compared against the cost itself, so it
+            # does not fire merely because the cost has become small (comparing against
+            # `max(cost, 1)` makes it absolute below cost 1 and stops far from a stationary point).
+            # `cost < ftol` is the separate zero-residual exit.
+            (gnorm < gtol || actual_reduction < ftol * cost || cost < ftol) &&
                 return x, f, g, iter
-            end
-            if actual_reduction < ftol * max(cost, 1.0)
-                verbose && println("Function tolerance criterion reached")
-                return x, f, g, iter
-            end
-            # update cache
-            factorize!(cache, subproblem_strategy, J)
-            cache.scaling_matrix .= scaling(scaling_strategy, J)
-            # To verify allocations reduced, check cache.J_buffer
-            if cache.J_buffer === nothing
-                @warn "Optimized path NOT taken: J is $(typeof(J))"
-            end
+            update_cache!(cache, J, scaling)
         else
-            verbose && println("Step rejected, ρ = $ρ")
+            verbose && println("iter $iter  step rejected, ρ = $ρ")
         end
-        # Check trust region size
-        if radius < min_trust_radius
-            verbose && println("Trust region radius below minimum")
-            return x, f, g, iter
-        end
+        radius < min_trust_radius && return x, f, g, iter
     end
-    verbose && println("Maximum number of iterations reached")
     return x, f, g, max_iter
 end
