@@ -29,7 +29,17 @@ function compare_with_best(df::DataFrame; atol = 1e-4)
     # Use standard DataFrames - no macro BS
     df_proc = copy(df)
     # A solve that violates its bounds cannot set the reference minimum for the others.
-    df_proc.final_cost = ifelse.(df_proc.bounds_satisfied, df_proc.final_cost, Inf)
+    # Neither can a negative cost from a non-converged run: the objective is nonnegative,
+    # but the expanded quadratic form evaluates to values below the true minimum at
+    # diverged iterates (e.g. -4.25 on mgh34). Converged runs legitimately report tiny
+    # negatives like -1e-14, so only those may keep a negative cost.
+    df_proc.final_cost =
+        ifelse.(
+            df_proc.bounds_satisfied .&
+            ((df_proc.final_cost .>= 0) .| df_proc.converged),
+            df_proc.final_cost,
+            Inf,
+        )
 
     # Find minimum (best) solution for each problem, ignoring failed/NaN runs.
     min_solutions =

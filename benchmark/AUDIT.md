@@ -282,14 +282,54 @@ cite this when questioned. Delay-figure rerun at these settings in progress; exp
 few-iteration LM cluster (TRLS / SciPy / NLLSsolver ≈ 1×) ahead of
 NonlinearSolve-LM (stall tail) and BFGS/L-BFGS (line-search gradient evaluations).
 
+### 2026-09-16 re-run
+
+Every suite re-measured on Linux x86-64, Julia 1.12.4, SciPy 1.15.3 (system Python via
+`JULIA_CONDAPKG_BACKEND=Null` + `JULIA_PYTHON` — the repo's CondaPkg/pixi env produced a corrupt
+conda python on this machine). Headline movements are NonlinearSolve's, not this package's:
+`NonlinearSolve.TrustRegion` now solves the subproblem nearly exactly (Moré-style safeguarded λ
+iteration) instead of approximating it by dogleg — the dogleg variant remains available as
+`NonlinearSolve.TrustRegionDogleg`.
+
+**Finding #8 — reference-best poisoning by a diverged negative cost.** `compare_with_best` took the
+per-problem minimum over every finite `final_cost`. On `mgh34`, `NonlinearSolve-LM` hit `maxiters`
+and returned `final_cost = -4.25`: the NLSProblems model objective is a nonnegative least-squares
+value, but at a diverged iterate its expanded quadratic form evaluates below the true minimum. That
+poisoned the reference and marked every honest solve on `mgh34` — TRLS and SciPy included — as a
+failure, showing 87/88 across the board. `compare_with_best` now discards a negative cost unless the
+solver flags the run as converged; converged runs keep tiny negatives like `-1e-14` legitimately
+(the expanded form at a zero-residual solution). Under the corrected rule the headline set is
+TRLS / NonlinearSolve-TR / SciPy at 88/88 each.
+
+Unconstrained (88 problems): NonlinearSolve-TR joins the 100% tier — 0.258 s cumulative against
+TRLS 0.574 s and SciPy 1.318 s — while keeping a higher median iteration count (34.0 vs 12.5/13.0).
+Underdetermined: TRLS, LM-QR-scaled, NonlinearSolve-TR and SciPy all 100%. Delay suite:
+NonlinearSolve-TR moved 94.3% → 100%; TRLS keeps the lowest median (2.32 s) and cumulative (421.3 s)
+time among the 100% solvers. Bounded: NonlinearSolve's bounded defaults and polyalgorithm improved
+markedly — `NonlinearSolve-PolyAlg` now leads the set at 93.0% (was 16.9%), and the single-method
+`NonlinearSolve-TrustRegion` went 8.5% → 78.9%; TRLS leads the remaining single-method solvers at
+83.1%. Hard Lukšan set unchanged (TRLS 2/6 unscaled, 4/6 scaled; PolyAlg 6/6 on the log
+parameterization).
+
 ## Reproduce
 
 ```bash
 julia --project=benchmark benchmark/scripts/compare_unconstrained.jl
+julia --project=benchmark benchmark/scripts/compare_underdetermined.jl
+julia --project=benchmark benchmark/scripts/hard_luksan.jl
+julia --project=benchmark benchmark/scripts/compare_bounded.jl
 julia --project=benchmark benchmark/scripts/compare_with_delay.jl
 julia --project=benchmark benchmark/scripts/plot_results.jl
 ```
 
-Package versions: NonlinearSolve 4.20.1 / NonlinearSolveBase 2.31.3, JSOSolvers 0.14.8,
-LeastSquaresOptim 0.8.10, LsqFit 0.16.1, NLLSsolver 4.0.8, Optim 2.2.1, PRIMA 0.2.4,
-SciPy 1.18.0 (conda-forge, via PythonCall), Julia 1.12, Chairmarks 1.3.1.
+Package versions: NonlinearSolve 4.32.0 / NonlinearSolveBase 2.52.1 / NonlinearSolveFirstOrder 2.9.0,
+JSOSolvers 0.14.8, LeastSquaresOptim 0.8.10, LsqFit 0.16.1, NLLSsolver 4.1.0, Optim 2.3.1,
+PRIMA 0.2.4, SciPy 1.15.3 (system Python, via PythonCall), Julia 1.12.4, Chairmarks 1.3.1.
+
+Manifest caveat: the committed `benchmark/Manifest.toml` still resolves NonlinearSolve to 4.30.0.
+`NonlinearSolveBase ≥ 2.48.1` requires `TimerOutputs 1.x` while `LinearOperators` (a hard dependency
+of `NLPModels`/`NLSProblems`, all versions) caps `TimerOutputs = "0.5"`, so the resolver silently
+downgrades NonlinearSolve to 4.30.0 — the last pre-Moré release. These numbers were produced with
+the released sublibraries above via a locally relaxed `NonlinearSolveBase` compat; the conflict is
+tracked upstream as JuliaSmoothOptimizers/LinearOperators.jl#424. Once a `LinearOperators` release
+allows `TimerOutputs 1`, `Pkg.update()` reproduces the benchmarked versions with no other changes.

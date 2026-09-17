@@ -12,7 +12,7 @@ Features:
 * badly scaled variables
 * Pure Julia, one dependency (`LinearAlgebra`).
 
-Solving the trust-region subproblem exactly is computationally more costly than the alternatives, such as updating the LM damping parameter by a heuristic (e.g. `NonlinearSolve.LevenbergMarquardt`) or solving the subproblem approximately (`NonlinearSolve.TrustRegion`, which uses the dogleg method). But the exact solve goes through careful factorizations, which keeps the number of Jacobian evaluations down. That is especially useful in real-world problems such as fitting an ODE or PDE model, or a simulation, where the residual and Jacobian evaluations dominate the run time. It is also often more robust than the alternatives (see the [benchmarks](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/15-benchmarks/)).
+Solving the trust-region subproblem exactly is more involved per iteration than the alternatives, such as updating the LM damping parameter by a heuristic (e.g. `NonlinearSolve.LevenbergMarquardt`) or solving the subproblem approximately by the dogleg method (`NonlinearSolve.TrustRegionDogleg`). `NonlinearSolve.TrustRegion` also solves the same subproblem nearly exactly, so the differentiator here is not exactness itself but the factorization strategies — including minimum-norm steps for underdetermined problems — and a step policy that keeps the number of Jacobian evaluations down. That is especially useful in real-world problems such as fitting an ODE or PDE model, or a simulation, where the residual and Jacobian evaluations dominate the run time. It is also often more robust than the alternatives (see the [benchmarks](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/15-benchmarks/)).
 
 ## Installation
 
@@ -58,7 +58,7 @@ parameters than residuals).
 
 - [Quick start](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/): strategies, scaling and bounds
 - [Theory](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/10-theory/): the method and its factorizations
-- [Benchmarks](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/15-benchmarks/): comparison against nine other Julia and Python solvers
+- [Benchmarks](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/15-benchmarks/): comparison against eleven other Julia and Python solvers
 - [Bibliography](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/20-bibliography/): the published methods the solver implements
 - [API reference](https://vcantarella.github.io/TrustRegionLeastSquares.jl/dev/95-reference/)
 

@@ -68,8 +68,9 @@ The main algorithm consists of:
    take it; otherwise find $\lambda > 0$ such that $\|p(\lambda)\| = \Delta_k$.
    > Solvers need a way to pin down $\lambda$: *Levenberg–Marquardt (LM)* implementations define and
    > update $\lambda$ directly, whereas *Trust-Region (TR)* methods update $\Delta$. The popular
-   > current Julia TR implementations only approximate the matching $\lambda$, e.g. with the dogleg
-   > method.
+   > current Julia TR implementations either update $\Delta$ and solve for the matching $\lambda$
+   > nearly exactly (e.g. `NonlinearSolve.TrustRegion`, by Moré-style iteration) or approximate it
+   > with the dogleg method (`NonlinearSolve.TrustRegionDogleg`).
 3. Evaluate the step, update $\lambda$ or $\Delta$, and continue until convergence.
 
 Finding the $\lambda$ that matches the radius is a one-dimensional root-finding problem, and this
